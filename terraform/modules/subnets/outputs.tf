@@ -1,4 +1,4 @@
 output "subnet_ids" {
-  description = "The IDs of the private subnets"
-  value       = [for subnet in aws_subnet.private : subnet.id]
+  description = "Private subnet IDs keyed by availability zone"
+  value       = { for az, subnet in aws_subnet.this : az => subnet.id }
 }

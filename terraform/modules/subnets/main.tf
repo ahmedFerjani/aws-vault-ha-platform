@@ -1,4 +1,4 @@
-resource "aws_subnet" "private" {
+resource "aws_subnet" "this" {
   for_each = { for subnet in var.subnets : subnet.az => subnet }
 
   vpc_id            = var.vpc_id
