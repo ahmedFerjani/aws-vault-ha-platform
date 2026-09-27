@@ -31,3 +31,19 @@ AWS KMS removes the need for manual unseal during EC2 restarts or replacement an
 - KMS permissions must be tightly restricted
 - KMS is not Vault storage and must not be confused with Raft
 - S3 remains a backup destination, not a live storage backend
+
+## Decision: Use an internet-facing NLB with private Vault nodes.
+
+Clients reach the Vault API through a TLS-enabled public NLB. The NLB is placed in public subnets across three Availability Zones; Vault EC2 instances remain in private subnets without public IPs or direct internet routes.
+
+### Benefits
+
+- Provides a stable public entry point across Availability Zones
+- Keeps Vault nodes off the public internet
+- Separates inbound client access from private-node outbound egress
+
+### Trade-offs
+
+- The public endpoint requires strict TLS, listener, and target security-group controls
+- Public subnets and an Internet Gateway are required for the NLB
+- NAT Gateways are not part of inbound access and must be justified separately for private-node egress

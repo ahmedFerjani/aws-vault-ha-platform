@@ -33,3 +33,24 @@ module "private_route_table" {
   vpc_id      = module.vpc.vpc_id
   subnet_ids  = module.private_subnets.subnet_ids
 }
+
+module "public_network" {
+  source = "./modules/public-network"
+
+  name_prefix = local.name_prefix
+  vpc_id      = module.vpc.vpc_id
+  subnets = [
+    {
+      az         = "us-east-1a"
+      cidr_block = "10.16.101.0/24"
+    },
+    {
+      az         = "us-east-1b"
+      cidr_block = "10.16.102.0/24"
+    },
+    {
+      az         = "us-east-1c"
+      cidr_block = "10.16.103.0/24"
+    }
+  ]
+}

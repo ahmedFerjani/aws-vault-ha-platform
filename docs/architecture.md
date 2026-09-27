@@ -30,4 +30,4 @@ A three-node Vault cluster runs on EC2 across three availability zones. The clus
 
 ## Current state
 
-The architecture baseline is defined. AWS infrastructure has not been provisioned yet.
+Terraform provisions the VPC, three private subnets, and their private route table. The public NLB network layer is being added; the NLB and Vault compute are not yet implemented.
