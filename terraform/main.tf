@@ -5,8 +5,8 @@ module "vpc" {
   cidr_block = "10.16.0.0/16"
 }
 
-module "private_subnets" {
-  source      = "./modules/subnets"
+module "private_network" {
+  source      = "./modules/private-network"
   name_prefix = local.name_prefix
 
   vpc_id = module.vpc.vpc_id
@@ -24,14 +24,6 @@ module "private_subnets" {
       cidr_block = "10.16.3.0/24"
     }
   ]
-}
-
-module "private_route_table" {
-  source = "./modules/route-table"
-
-  name_prefix = local.name_prefix
-  vpc_id      = module.vpc.vpc_id
-  subnet_ids  = module.private_subnets.subnet_ids
 }
 
 module "public_network" {

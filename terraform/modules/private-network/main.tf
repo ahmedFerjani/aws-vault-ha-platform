@@ -11,3 +11,18 @@ resource "aws_subnet" "this" {
     Name = "${var.name_prefix}-private-subnet-${each.value.az}"
   }
 }
+
+resource "aws_route_table" "this" {
+  vpc_id = var.vpc_id
+
+  tags = {
+    Name = "${var.name_prefix}-private-route-table"
+  }
+}
+
+resource "aws_route_table_association" "this" {
+  for_each = aws_subnet.this
+
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.this.id
+}

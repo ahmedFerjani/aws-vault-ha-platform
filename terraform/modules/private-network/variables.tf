@@ -1,10 +1,10 @@
-variable "vpc_id" {
-  description = "The VPC ID where subnets will be created"
+variable "name_prefix" {
+  description = "Prefix used in private network naming"
   type        = string
 }
 
-variable "name_prefix" {
-  description = "Prefix used in subnet naming"
+variable "vpc_id" {
+  description = "The VPC ID where private subnets will be created"
   type        = string
 }
 
