@@ -56,15 +56,16 @@ module "public_network" {
   ]
 }
 
-module "vault_node_iam" {
-  source = "./modules/vault-node-iam"
-
-  name_prefix = local.name_prefix
-}
-
 module "vault_auto_unseal" {
   source = "./modules/vault-auto-unseal"
 
   name_prefix = local.name_prefix
   account_id  = local.account_id
+}
+
+module "vault_node_iam" {
+  source = "./modules/vault-node-iam"
+
+  name_prefix         = local.name_prefix
+  auto_unseal_key_arn = module.vault_auto_unseal.key_arn
 }
