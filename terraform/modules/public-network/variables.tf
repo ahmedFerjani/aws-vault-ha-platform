@@ -8,6 +8,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vault_subnet_cidrs" {
+  description = "Private Vault subnet CIDRs allowed as NLB backend destinations"
+  type        = set(string)
+}
+
 variable "subnets" {
   description = "Public subnet CIDRs and Availability Zones"
   type = list(object({

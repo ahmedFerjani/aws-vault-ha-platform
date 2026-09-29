@@ -12,3 +12,8 @@ output "internet_gateway_id" {
   description = "ID of the VPC Internet Gateway"
   value       = aws_internet_gateway.this.id
 }
+
+output "load_balancer_dns_name" {
+  description = "DNS name of the public Vault NLB"
+  value       = aws_lb.this.dns_name
+}
