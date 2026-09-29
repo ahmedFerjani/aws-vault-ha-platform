@@ -55,3 +55,9 @@ module "public_network" {
     }
   ]
 }
+
+module "vault_node_iam" {
+  source = "./modules/vault-node-iam"
+
+  name_prefix = local.name_prefix
+}
