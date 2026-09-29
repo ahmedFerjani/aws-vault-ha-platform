@@ -14,15 +14,20 @@ After Vault nodes are registered, verify health and test client requests to both
 
 ## Security and failure behavior
 
-The Internet Gateway provides a route, not permission to access a resource. The NLB security group permits inbound TCP 443 from the internet and outbound TCP 8200 only to the private Vault subnet CIDRs. There is no listener yet, so the NLB cannot accept Vault requests. A future TLS listener must use a trusted certificate; a separate Vault-node security group must allow port 8200 only from the NLB security group. The NLB security group alone does not protect the target instances.
+The network-security module defines two security groups:
 
-AWS does not allow security groups to be added to an NLB that was originally created without one. This NLB already exists without a security group: replacing it will change its DNS name and briefly interrupt access if any clients use it. Review the Terraform plan and explicitly approve replacement before applying; do not assume an in-place update will succeed. The target group and private Vault subnets must be preserved.
+| Group       | Inbound                                                                        | Outbound                                   |
+| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| NLB         | TCP 443 from the internet                                                      | TCP 8200 to the private Vault subnet CIDRs |
+| Vault nodes | TCP 8200 from the NLB group; TCP 8200/8201 from other nodes in the Vault group | TCP 8200/8201 to nodes in the Vault group  |
 
-Each AZ has its own public subnet and route to the Internet Gateway, avoiding a single-AZ subnet dependency for the NLB. Loss of an AZ still reduces available NLB capacity; the other AZs remain available.
+Port 8200 carries Vault API and peer API traffic; port 8201 carries cluster traffic. Vault nodes have no public IPs or direct internet route. Access to KMS and other required services still needs an egress design before nodes are launched.
+
+The NLB has no listener or registered targets yet, and the Vault group is not attached to instances; client and peer traffic cannot be tested yet. One AZ failure reduces NLB capacity, while the remaining AZs stay available. If every target is unhealthy, the NLB may fail open; health checks are not an access-control boundary.
 
 ## Validation
 
-Before applying changes, run `terraform fmt -check`, `terraform validate`, and `terraform plan`. Confirm the plan preserves the existing VPC and private subnets and only adds the public networking resources. After apply, verify the Internet Gateway attachment, public route table associations, and one public subnet per AZ.
+Before applying changes, run `terraform fmt -check`, `terraform validate`, and `terraform plan`. Review changes to the VPC, subnets, routes, NLB, target group, and security groups. Verify the NLB security-group attachment after apply; test client and peer traffic when listeners and nodes exist.
 
 ## Outbound access
 

@@ -26,12 +26,20 @@ module "private_network" {
   ]
 }
 
-module "public_network" {
-  source = "./modules/public-network"
+module "network_security" {
+  source = "./modules/network-security"
 
   name_prefix        = local.name_prefix
   vpc_id             = module.vpc.vpc_id
   vault_subnet_cidrs = values(module.private_network.subnet_cidr_blocks)
+}
+
+module "public_network" {
+  source = "./modules/public-network"
+
+  name_prefix           = local.name_prefix
+  vpc_id                = module.vpc.vpc_id
+  nlb_security_group_id = module.network_security.nlb_security_group_id
   subnets = [
     {
       az         = "us-east-1a"

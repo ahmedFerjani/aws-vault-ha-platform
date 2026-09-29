@@ -8,9 +8,9 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "vault_subnet_cidrs" {
-  description = "Private Vault subnet CIDRs allowed as NLB backend destinations"
-  type        = set(string)
+variable "nlb_security_group_id" {
+  description = "Security group ID assigned to the NLB"
+  type        = string
 }
 
 variable "subnets" {
