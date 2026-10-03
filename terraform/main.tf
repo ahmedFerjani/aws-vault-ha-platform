@@ -78,5 +78,7 @@ module "vault_node_compute" {
   instance_type           = var.vault_instance_type
   instance_profile_name   = module.vault_node_iam.instance_profile_name
   vault_security_group_id = module.network_security.vault_security_group_id
+  private_subnet_ids      = values(module.private_network.subnet_ids)
+  target_group_arn        = module.public_network.target_group_arn
   default_tags            = local.default_tags
 }

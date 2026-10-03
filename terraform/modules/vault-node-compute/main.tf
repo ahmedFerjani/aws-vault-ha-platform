@@ -52,3 +52,20 @@ resource "aws_launch_template" "this" {
     tags          = local.volume_tags
   }
 }
+
+resource "aws_autoscaling_group" "this" {
+  name                = "${var.name_prefix}-nodes"
+  min_size            = 0
+  desired_capacity    = 0
+  max_size            = 3
+  vpc_zone_identifier = var.private_subnet_ids
+  target_group_arns   = [var.target_group_arn]
+
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+
+  launch_template {
+    id      = aws_launch_template.this.id
+    version = aws_launch_template.this.latest_version
+  }
+}
