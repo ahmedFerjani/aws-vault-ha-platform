@@ -1,0 +1,6 @@
+---
+- name: Configure Vault nodes
+  hosts: vault_nodes
+  become: true
+  roles:
+    - vault

@@ -1,0 +1,61 @@
+---
+- name: Validate pinned Vault RPM inputs
+  ansible.builtin.assert:
+    that:
+      - vault_version is defined
+      - vault_version | length > 0
+      - vault_package_release is defined
+      - vault_package_release | length > 0
+    fail_msg: Set the pinned Vault version and RPM release.
+
+- name: Configure HashiCorp stable RPM repository for Amazon Linux
+  ansible.builtin.yum_repository:
+    name: hashicorp
+    description: HashiCorp Stable - $basearch
+    baseurl: https://rpm.releases.hashicorp.com/AmazonLinux/latest/$basearch/stable
+    enabled: true
+    gpgcheck: true
+    gpgkey: "{{ vault_rpm_gpg_key_url }}"
+
+- name: Install the pinned Vault RPM using repository GPG verification
+  ansible.builtin.dnf:
+    name: "vault-{{ vault_version }}-{{ vault_package_release }}"
+    state: present
+    update_cache: true
+    disable_gpg_check: false
+
+- name: Create Vault group
+  ansible.builtin.group:
+    name: "{{ vault_group }}"
+    system: true
+    state: present
+
+- name: Create non-login Vault service user
+  ansible.builtin.user:
+    name: "{{ vault_user }}"
+    group: "{{ vault_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create Vault configuration, data, and package cache directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /etc/vault.d
+      owner: root
+      group: "{{ vault_group }}"
+      mode: "0750"
+    - path: /opt/vault
+      owner: root
+      group: "{{ vault_group }}"
+      mode: "0750"
+    - path: /opt/vault/data
+      owner: "{{ vault_user }}"
+      group: "{{ vault_group }}"
+      mode: "0700"

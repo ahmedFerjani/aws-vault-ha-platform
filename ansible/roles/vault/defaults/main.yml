@@ -1,0 +1,5 @@
+vault_user: vault
+vault_group: vault
+vault_version: "2.1.1"
+vault_package_release: "1"
+vault_rpm_gpg_key_url: https://rpm.releases.hashicorp.com/gpg
