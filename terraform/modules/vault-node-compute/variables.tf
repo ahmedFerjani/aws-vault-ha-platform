@@ -3,6 +3,11 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "ami_id" {
+  description = "Pinned Amazon Linux AMI ID for Vault nodes"
+  type        = string
+}
+
 variable "instance_type" {
   description = "EC2 instance type for Vault nodes"
   type        = string

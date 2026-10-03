@@ -74,6 +74,7 @@ module "vault_node_compute" {
   source = "./modules/vault-node-compute"
 
   name_prefix             = local.name_prefix
+  ami_id                  = var.vault_ami_id
   instance_type           = var.vault_instance_type
   instance_profile_name   = module.vault_node_iam.instance_profile_name
   vault_security_group_id = module.network_security.vault_security_group_id

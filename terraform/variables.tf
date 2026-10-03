@@ -21,3 +21,9 @@ variable "vault_instance_type" {
   type        = string
   default     = "t3.medium"
 }
+
+variable "vault_ami_id" {
+  description = "Pinned Amazon Linux 2023 x86_64 AMI ID for Vault nodes in us-east-1"
+  type        = string
+  default     = "ami-0d27e0fb3bac4d724"
+}

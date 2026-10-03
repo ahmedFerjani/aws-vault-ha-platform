@@ -1,7 +1,3 @@
-data "aws_ssm_parameter" "amazon_linux_2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
 locals {
   instance_tags = merge(var.default_tags, {
     Name = "${var.name_prefix}-node"
@@ -15,7 +11,7 @@ locals {
 resource "aws_launch_template" "this" {
   name_prefix   = "${var.name_prefix}-node-"
   description   = "Launch template for private Vault nodes"
-  image_id      = data.aws_ssm_parameter.amazon_linux_2023.value
+  image_id      = var.ami_id
   instance_type = var.instance_type
 
   iam_instance_profile {
