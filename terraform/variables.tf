@@ -15,3 +15,9 @@ variable "project_name" {
   type        = string
   default     = "vault-ha"
 }
+
+variable "vault_instance_type" {
+  description = "Starter EC2 instance type for each Vault node"
+  type        = string
+  default     = "t3.medium"
+}

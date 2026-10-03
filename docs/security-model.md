@@ -4,7 +4,7 @@
 
 Vault nodes use a dedicated IAM role assumed by the EC2 service. This gives instances temporary credentials rather than static AWS keys. An inline role policy permits only `kms:Encrypt`, `kms:Decrypt`, and `kms:DescribeKey` on the auto-unseal key ARN. It grants no access to other keys or S3.
 
-The instance profile and its attachment belong to the EC2 stage. Nodes must also have a private network path to KMS before auto-unseal can work.
+An IAM instance profile packages the role for attachment to EC2. The launch template will reference the profile; creating it does not launch instances. Nodes must also have a private network path to KMS before auto-unseal can work.
 
 ## Auto-unseal key
 

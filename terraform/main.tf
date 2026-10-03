@@ -69,3 +69,13 @@ module "vault_node_iam" {
   name_prefix         = local.name_prefix
   auto_unseal_key_arn = module.vault_auto_unseal.key_arn
 }
+
+module "vault_node_compute" {
+  source = "./modules/vault-node-compute"
+
+  name_prefix             = local.name_prefix
+  instance_type           = var.vault_instance_type
+  instance_profile_name   = module.vault_node_iam.instance_profile_name
+  vault_security_group_id = module.network_security.vault_security_group_id
+  default_tags            = local.default_tags
+}
