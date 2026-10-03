@@ -1,0 +1,21 @@
+ui            = true
+api_addr      = "https://{{ ansible_facts['default_ipv4']['address'] }}:8200"
+cluster_addr  = "https://{{ ansible_facts['default_ipv4']['address'] }}:8201"
+disable_mlock = true
+
+storage "raft" {
+  path = "/opt/vault/data"
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file   = "{{ vault_tls_cert_file }}"
+  tls_key_file    = "{{ vault_tls_key_file }}"
+  tls_min_version = "tls12"
+}
+
+seal "awskms" {
+  region     = "{{ vault_kms_region }}"
+  kms_key_id = "{{ vault_kms_key_id }}"
+}
