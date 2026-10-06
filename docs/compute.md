@@ -12,7 +12,7 @@ Require IMDSv2, disable public IPv4 assignment, and use an encrypted 20 GiB gp3 
 
 The launch template attaches the existing least-privilege instance profile and Vault-node security group. The profile provides temporary role credentials; it does not create a network path to KMS. No Vault node may receive a public IP. The current template has no SSH key, Session Manager permissions/connectivity, or bootstrap, so the smoke test is limited to EC2/ASG state visible in AWS; the instance cannot be interactively managed through those methods and is not a functioning Vault target. An unhealthy target is expected until Vault is installed and configured.
 
-Replacing a Vault instance is stateful: a replacement must install and configure Vault, discover the existing cluster, join Raft, and become healthy without initializing an independent cluster. Before scaling above zero, verify the ASG can distribute instances across AZs and that one-node replacement preserves quorum. Never allow automated replacement to initialize an independent cluster.
+Replacing a Vault instance is stateful: a replacement must install and configure Vault, use AWS Raft `retry_join` discovery filtered to this cluster, join the existing Raft cluster, and become healthy without initializing an independent cluster. The instance role will need EC2 discovery permissions, and ASG instances need a dedicated discovery tag. Before scaling above zero, verify discovery, TLS peer validation, AZ distribution, and one-node replacement while quorum remains. Never allow automated replacement to initialize an independent cluster.
 
 ## Validation
 

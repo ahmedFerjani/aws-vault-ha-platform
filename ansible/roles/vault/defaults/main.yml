@@ -7,3 +7,5 @@ vault_kms_region: us-east-1
 vault_kms_key_id: alias/vault-ha-dev-auto-unseal
 vault_tls_cert_file: /opt/vault/tls/tls.crt
 vault_tls_key_file: /opt/vault/tls/tls.key
+vault_tls_cert_src: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/letsencrypt-vault/live/vault.ahmedferjani.com/fullchain.pem"
+vault_tls_key_src: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/letsencrypt-vault/live/vault.ahmedferjani.com/privkey.pem"

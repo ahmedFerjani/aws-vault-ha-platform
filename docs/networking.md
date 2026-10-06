@@ -23,7 +23,7 @@ The network-security module defines two security groups:
 
 Port 8200 carries Vault API and peer API traffic; port 8201 carries cluster traffic. Vault nodes have no public IPs or direct internet route. Access to KMS and other required services still needs an egress design before nodes are launched.
 
-The NLB has no listener or registered targets yet, and the Vault group is not attached to instances; client and peer traffic cannot be tested yet. One AZ failure reduces NLB capacity, while the remaining AZs stay available. If every target is unhealthy, the NLB may fail open; health checks are not an access-control boundary.
+The NLB has no listener or registered targets yet, and the Vault group is not attached to instances; client and peer traffic cannot be tested yet. The planned listener is TCP 443 pass-through to the Vault TLS listener on TCP 8200; Vault presents the client certificate, and the NLB does not decrypt API traffic. One AZ failure reduces NLB capacity, while the remaining AZs stay available. If every target is unhealthy, the NLB may fail open; health checks are not an access-control boundary.
 
 ## Validation
 
