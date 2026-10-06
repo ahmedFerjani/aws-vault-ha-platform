@@ -1,0 +1,14 @@
+---
+- name: Configure Vault server settings
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: /etc/vault.d/vault.hcl
+    owner: root
+    group: "{{ service_group }}"
+    mode: "0640"
+
+- name: Keep Vault stopped and disabled until Raft bootstrap is ready
+  ansible.builtin.systemd_service:
+    name: vault.service
+    state: stopped
+    enabled: false

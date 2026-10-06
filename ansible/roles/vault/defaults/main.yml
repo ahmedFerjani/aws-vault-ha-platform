@@ -1,11 +1,9 @@
-vault_user: vault
-vault_group: vault
-vault_version: "2.1.1"
-vault_package_release: "1"
-vault_rpm_gpg_key_url: https://rpm.releases.hashicorp.com/gpg
-vault_kms_region: us-east-1
-vault_kms_key_id: alias/vault-ha-dev-auto-unseal
-vault_tls_cert_file: /opt/vault/tls/tls.crt
-vault_tls_key_file: /opt/vault/tls/tls.key
-vault_tls_cert_src: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/letsencrypt-vault/live/vault.ahmedferjani.com/fullchain.pem"
-vault_tls_key_src: "{{ lookup('ansible.builtin.env', 'HOME') }}/.config/letsencrypt-vault/live/vault.ahmedferjani.com/privkey.pem"
+service_user: vault
+service_group: vault
+package_version: "2.1.1"
+package_release: "1"
+hashicorp_rpm_gpg_key_url: https://rpm.releases.hashicorp.com/gpg
+kms_region: us-east-1
+auto_unseal_kms_key_id: alias/vault-ha-dev-auto-unseal
+tls_cert_file: /opt/vault/tls/tls.crt
+tls_key_file: /opt/vault/tls/tls.key

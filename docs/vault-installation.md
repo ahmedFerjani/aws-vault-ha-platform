@@ -23,4 +23,8 @@ The managed server configuration uses Raft at `/opt/vault/data`, AWS KMS auto-un
 
 The role passed `ansible-playbook --syntax-check` and was applied to the disposable `vault-test` host. A second run reported `changed=0`. The rendered HCL points Raft at `/opt/vault/data`, uses the instance private IP for API and cluster addresses, and configures the KMS seal and TLS file paths. The config is `root:vault` mode `0640`; Raft data is `vault:vault` mode `0700`.
 
+## Test inventory setup
+
+The repository includes `ansible/inventory/test.ini.example` as a template. For a local test, copy it to the ignored `ansible/inventory/test.ini`, then replace the placeholders with the test EC2 public DNS name, the absolute path to your SSH private key, and the local Certbot `fullchain.pem` and `privkey.pem` paths. The certificate and private key must remain local and must never be committed. Run the playbook with `ansible-playbook -i ansible/inventory/test.ini ansible/site.yml --limit vault-test`.
+
 Vault remains disabled and inactive. The referenced TLS files exist on the test host, but their SANs, trust chain, and suitability for the final endpoint have not been validated here. Vault has not been started, its HCL has not been runtime-validated, KMS reachability/auto-unseal has not been tested, and no Raft cluster has been initialized. Do not enable or start the service until the TLS lifecycle and safe first-node versus join-node procedure are ready.

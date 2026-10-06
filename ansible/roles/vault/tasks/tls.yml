@@ -1,0 +1,55 @@
+---
+- name: Check local TLS certificate and key sources
+  ansible.builtin.assert:
+    that:
+      - local_tls_cert_source is defined
+      - local_tls_cert_source | length > 0
+      - local_tls_key_source is defined
+      - local_tls_key_source | length > 0
+    fail_msg: Set local_tls_cert_source and local_tls_key_source in the controller inventory.
+
+- name: Inspect local TLS certificate and key source files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  delegate_to: localhost
+  become: false
+  loop:
+    - "{{ local_tls_cert_source }}"
+    - "{{ local_tls_key_source }}"
+  register: vault_tls_source_stats
+
+- name: Require local TLS certificate and key files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: Required TLS source file is missing or not a regular file.
+  loop: "{{ vault_tls_source_stats.results }}"
+
+- name: Create restrictive Vault TLS directory
+  ansible.builtin.file:
+    path: /opt/vault/tls
+    state: directory
+    owner: root
+    group: "{{ service_group }}"
+    mode: "0750"
+
+- name: Install Vault TLS certificate chain
+  ansible.builtin.copy:
+    src: "{{ local_tls_cert_source }}"
+    dest: "{{ tls_cert_file }}"
+    local_follow: true
+    owner: root
+    group: "{{ service_group }}"
+    mode: "0640"
+
+- name: Install Vault TLS private key
+  ansible.builtin.copy:
+    src: "{{ local_tls_key_source }}"
+    dest: "{{ tls_key_file }}"
+    local_follow: true
+    owner: root
+    group: "{{ service_group }}"
+    mode: "0640"
+  no_log: true

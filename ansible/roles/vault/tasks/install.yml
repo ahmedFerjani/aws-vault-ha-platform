@@ -1,0 +1,25 @@
+---
+- name: Validate pinned Vault RPM inputs
+  ansible.builtin.assert:
+    that:
+      - package_version is defined
+      - package_version | length > 0
+      - package_release is defined
+      - package_release | length > 0
+    fail_msg: Set the pinned Vault version and RPM release.
+
+- name: Configure HashiCorp stable RPM repository for Amazon Linux
+  ansible.builtin.yum_repository:
+    name: hashicorp
+    description: HashiCorp Stable - $basearch
+    baseurl: https://rpm.releases.hashicorp.com/AmazonLinux/latest/$basearch/stable
+    enabled: true
+    gpgcheck: true
+    gpgkey: "{{ hashicorp_rpm_gpg_key_url }}"
+
+- name: Install the pinned Vault RPM using repository GPG verification
+  ansible.builtin.dnf:
+    name: "vault-{{ package_version }}-{{ package_release }}"
+    state: present
+    update_cache: true
+    disable_gpg_check: false
