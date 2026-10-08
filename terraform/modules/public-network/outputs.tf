@@ -22,3 +22,8 @@ output "target_group_arn" {
   description = "ARN of the Vault NLB target group"
   value       = aws_lb_target_group.this.arn
 }
+
+output "nat_gateway_ids" {
+  description = "Public NAT Gateway IDs keyed by Availability Zone"
+  value       = { for az, nat in aws_nat_gateway.this : az => nat.id }
+}

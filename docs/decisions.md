@@ -85,3 +85,26 @@ Use `vault.ahmedferjani.com` as the public client endpoint, pointing to the NLB 
 - The ASG launch template must tag instances with a dedicated cluster-discovery tag, and discovery must filter to this cluster only.
 - DNS identity does not preserve Raft identity; replacement nodes must join the existing cluster, not initialize a new one.
 - Validate TLS peer verification when auto-join discovers private IPs, including certificate SAN and `leader_tls_servername` behavior, before starting nodes.
+
+## Decision: Provide private Vault nodes with same-AZ NAT and AWS service endpoints.
+
+Vault nodes require outbound access to the HashiCorp RPM and OS repositories, KMS for auto-unseal, and EC2 APIs for Raft peer discovery. Keep nodes in private subnets without public IPs. Use one NAT Gateway per AZ for general HTTPS repository egress and KMS/EC2 interface VPC endpoints in each AZ for private AWS API access. Private subnet default routes target only the NAT Gateway in their own AZ; endpoint security groups accept HTTPS only from the Vault-node security group.
+
+### Alternatives Considered
+
+- No egress, with packages pre-baked into reviewed AMIs and no runtime AWS API endpoints.
+- One shared NAT Gateway for lower cost, accepting cross-AZ dependency and transfer charges.
+- A controlled internal RPM mirror or egress proxy instead of unrestricted public HTTPS through NAT.
+
+### Why
+
+- Supports package installation and updates while keeping Vault instances private.
+- Keeps KMS and EC2 API traffic on AWS private connectivity where endpoints are used.
+- Same-AZ NAT routing avoids depending on another AZ for general egress.
+
+### Consequences
+
+- Three NAT Gateways and two interface endpoint services (KMS and EC2, each with endpoint network interfaces in all three AZs) add recurring cost; review estimates before apply.
+- Security-group HTTPS egress through NAT is not destination-domain filtering. Use an internal mirror or egress control if public HTTPS needs tighter restriction.
+- The current test instance was in a separate VPC with a public IP; its successful RPM installation does not validate this private egress design.
+- The three NAT Gateways, Elastic IPs, and same-AZ private default routes are deployed. The Vault security group still lacks HTTPS egress, and KMS/EC2 interface endpoints are not implemented. Review the plan and cost impact before adding these remaining resources.

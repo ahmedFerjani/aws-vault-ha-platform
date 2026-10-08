@@ -8,6 +8,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "nat_gateway_ids" {
+  description = "Public NAT Gateway IDs keyed by Availability Zone"
+  type        = map(string)
+}
+
 variable "subnets" {
   description = "List of private subnet objects with az and cidr_block"
   type = list(object({

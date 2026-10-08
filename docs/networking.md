@@ -31,4 +31,12 @@ Before applying changes, run `terraform fmt -check`, `terraform validate`, and `
 
 ## Outbound access
 
-Private-subnet egress is a separate decision. Use VPC endpoints for required AWS services where practical. Add one NAT Gateway per AZ only if Vault nodes require general internet egress, such as reaching public package repositories; account for its recurring cost.
+### Design for Vault nodes
+
+Vault ASG instances launch in private subnets. Three per-AZ NAT Gateways and Elastic IPs are deployed in the matching public subnets. Each private subnet's route table now has a default route through the NAT Gateway in the same AZ. The successful Vault RPM installation was tested on a separate EC2 instance with a public IP in a different VPC, so it does not prove that future private Vault nodes can reach HashiCorp's repository.
+
+Provide private AWS API access using interface VPC endpoints for KMS and EC2 in all three Vault AZs, with private DNS enabled. The endpoint security group should accept TCP 443 only from the Vault-node security group; Vault-node egress should allow TCP 443 to those endpoint security groups. This supports KMS auto-unseal and AWS Raft peer discovery without routing those AWS API calls through the public internet.
+
+For the pinned Vault RPM and operating-system repositories, use one NAT Gateway per AZ in the corresponding public subnet. Each private subnet has its own route table; its `0.0.0.0/0` route targets the NAT Gateway in the same AZ. Keep Vault instances without public IPs. The Vault security group allows outbound TCP 443 to `0.0.0.0/0` for repository access; NAT provides the route but does not itself grant security-group permission. Security groups cannot filter by DNS name, so this rule permits HTTPS to public IPv4 destinations generally. Use an internal repository mirror or egress proxy/firewall if stricter destination control is required.
+
+This three-AZ layout avoids making one AZ's NAT a dependency for all Vault nodes, but NAT Gateways and interface endpoints have recurring hourly and data-processing charges. A shared NAT or privately mirrored package can reduce development cost but changes the availability, traffic, or operational trade-offs. The NAT Gateways and private routes are deployed and incur charges. KMS/EC2 interface endpoints are not implemented; until then, HTTPS to those public AWS APIs would also traverse NAT. Add an S3 gateway endpoint with a restricted bucket policy during the snapshot-backup stage.

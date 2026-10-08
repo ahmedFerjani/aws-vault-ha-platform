@@ -9,7 +9,8 @@ module "private_network" {
   source      = "./modules/private-network"
   name_prefix = local.name_prefix
 
-  vpc_id = module.vpc.vpc_id
+  vpc_id          = module.vpc.vpc_id
+  nat_gateway_ids = module.public_network.nat_gateway_ids
   subnets = [
     {
       az         = "us-east-1a"

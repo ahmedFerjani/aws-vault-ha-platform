@@ -61,6 +61,19 @@ resource "aws_vpc_security_group_ingress_rule" "nlb" {
   }
 }
 
+resource "aws_vpc_security_group_egress_rule" "https" {
+  security_group_id = aws_security_group.vault.id
+  description       = "HTTPS egress through NAT for package installation and updates"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+
+  tags = {
+    Name = "${var.name_prefix}-vault-egress-https-443"
+  }
+}
+
 # Allow Vault nodes in this group to exchange peer API (8200) and cluster (8201) traffic.
 resource "aws_vpc_security_group_ingress_rule" "peer" {
   for_each = toset(["8200", "8201"])

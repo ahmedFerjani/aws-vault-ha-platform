@@ -13,10 +13,12 @@ resource "aws_subnet" "this" {
 }
 
 resource "aws_route_table" "this" {
+  for_each = aws_subnet.this
+
   vpc_id = var.vpc_id
 
   tags = {
-    Name = "${var.name_prefix}-private-route-table"
+    Name = "${var.name_prefix}-private-route-table-${each.key}"
   }
 }
 
@@ -24,5 +26,13 @@ resource "aws_route_table_association" "this" {
   for_each = aws_subnet.this
 
   subnet_id      = each.value.id
-  route_table_id = aws_route_table.this.id
+  route_table_id = aws_route_table.this[each.key].id
+}
+
+resource "aws_route" "nat_egress" {
+  for_each = aws_route_table.this
+
+  route_table_id         = each.value.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = var.nat_gateway_ids[each.key]
 }
