@@ -1,6 +1,14 @@
 [vault_nodes]
-vault-test ansible_host=REPLACE_WITH_EC2_PUBLIC_DNS ansible_user=ec2-user ansible_ssh_private_key_file=/absolute/path/to/ssh-private-key.pem
+# Use a fresh SSM-managed instance ID, not a public DNS name or private IP.
+vault-test ansible_host=REPLACE_WITH_INSTANCE_ID
 
 [vault_nodes:vars]
+ansible_user=ec2-user
+ansible_connection=ssh
+# Verify this path on the target; Amazon Linux 2023 smoke test uses Python 3.9.
+ansible_python_interpreter=/usr/bin/python3.9
+ansible_ssh_private_key_file=/absolute/path/to/vault-laptop
+ansible_ssh_common_args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o HostKeyAlgorithms=ssh-ed25519 -o ProxyCommand="aws ssm start-session --region us-east-1 --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p"'
+# Sources are on the laptop controller, not on the target. Never commit key material.
 local_tls_cert_source=/absolute/path/to/fullchain.pem
 local_tls_key_source=/absolute/path/to/privkey.pem

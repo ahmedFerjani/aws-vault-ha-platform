@@ -8,7 +8,7 @@ override.tf.json
 *_override.tf.json
 
 # Local Ansible inventory may contain host addresses and key paths
-/ansible/inventory/test.ini
+/ansible/inventory/*.ini
 
 # Local editor settings
 .DS_Store

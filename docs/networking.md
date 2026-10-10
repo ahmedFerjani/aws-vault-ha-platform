@@ -16,14 +16,14 @@ After Vault nodes are registered, verify health and test client requests to both
 
 The network-security module defines two security groups:
 
-| Group       | Inbound                                                                        | Outbound                                   |
-| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
-| NLB         | TCP 443 from the internet                                                      | TCP 8200 to the private Vault subnet CIDRs |
-| Vault nodes | TCP 8200 from the NLB group; TCP 8200/8201 from other nodes in the Vault group | TCP 8200/8201 to nodes in the Vault group  |
+| Group       | Inbound                                                                        | Outbound                                                       |
+| ----------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| NLB         | TCP 443 from the internet                                                      | TCP 8200 to the private Vault subnet CIDRs                     |
+| Vault nodes | TCP 8200 from the NLB group; TCP 8200/8201 from other nodes in the Vault group | TCP 8200/8201 to nodes in the Vault group; TCP 443 through NAT |
 
-Port 8200 carries Vault API and peer API traffic; port 8201 carries cluster traffic. Vault nodes have no public IPs or direct internet route. Access to KMS and other required services still needs an egress design before nodes are launched.
+Port 8200 carries Vault API and peer API traffic; port 8201 carries cluster traffic. Vault nodes have no public IPs or direct internet route. Outbound HTTPS uses same-AZ NAT; private KMS/EC2 endpoints remain planned. Administrative SSH uses an SSM tunnel rather than inbound TCP 22; SSM requires outbound access to its service endpoints.
 
-The NLB has no listener or registered targets yet, and the Vault group is not attached to instances; client and peer traffic cannot be tested yet. The planned listener is TCP 443 pass-through to the Vault TLS listener on TCP 8200; Vault presents the client certificate, and the NLB does not decrypt API traffic. One AZ failure reduces NLB capacity, while the remaining AZs stay available. If every target is unhealthy, the NLB may fail open; health checks are not an access-control boundary.
+The NLB has no listener yet. The launch template attaches the Vault group, and the ASG registers instances with the target group. Registration is not healthy service: the installation role stops Vault, and no live NLB/Vault health validation has been recorded. The planned listener is TCP 443 pass-through to Vault on TCP 8200; Vault presents the client certificate, and the NLB does not decrypt API traffic. AZ failure behavior must be tested once the cluster serves requests. If every target is unhealthy, the NLB may fail open; health checks are not an access-control boundary.
 
 ## Validation
 
@@ -33,7 +33,7 @@ Before applying changes, run `terraform fmt -check`, `terraform validate`, and `
 
 ### Design for Vault nodes
 
-Vault ASG instances launch in private subnets. Three per-AZ NAT Gateways and Elastic IPs are deployed in the matching public subnets. Each private subnet's route table now has a default route through the NAT Gateway in the same AZ. The successful Vault RPM installation was tested on a separate EC2 instance with a public IP in a different VPC, so it does not prove that future private Vault nodes can reach HashiCorp's repository.
+Vault ASG instances launch in private subnets. Three per-AZ NAT Gateways and Elastic IPs are implemented in the matching public subnets, and each private subnet has a default route through its same-AZ NAT. Earlier RPM tests used a separate public host; subsequently, the operator reported successful Vault installation on one private node through laptop Ansible over SSM. This exercises that node's repository access, not all three AZs or actual Vault KMS operations.
 
 Provide private AWS API access using interface VPC endpoints for KMS and EC2 in all three Vault AZs, with private DNS enabled. The endpoint security group should accept TCP 443 only from the Vault-node security group; Vault-node egress should allow TCP 443 to those endpoint security groups. This supports KMS auto-unseal and AWS Raft peer discovery without routing those AWS API calls through the public internet.
 

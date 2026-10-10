@@ -16,6 +16,47 @@ A three-node cluster provides a quorum of 2, so one EC2 node can fail without lo
 - Losing two nodes can still break quorum and impact availability
 - The system requires more operational discipline than a stateless app
 
+## Decision: Use SSH over SSM for the current laptop-driven access iteration.
+
+### Context
+
+Direct management-to-node SSH passed its one-node tests, but required a control host and inbound TCP 22. The operator now chooses laptop-driven SSH tunneled through Session Manager. This supersedes the requirement for a management EC2 host. After successful laptop access and operator-reported Ansible deployment, the unused module, commented call, and management-only inputs were removed. A resource-address check found no management resources in current Terraform state; cleanup does not execute an AWS apply.
+
+### Decision
+
+Remove the management module call and Vault management SSH ingress from the active root configuration. Use ordinary SSH via `AWS-StartSSHSession`, with instance IDs, verified host keys, and a dedicated laptop key. Keep Vault nodes private and their existing SSM instance role and outbound HTTPS connectivity. Playbook tasks need not change; inventory/SSH configuration must change after fresh instance discovery. Do not initialize Vault as part of access testing.
+
+### Alternatives Considered
+
+Direct private-IP SSH from a management EC2 host; a native Ansible SSM connection plugin; a future dedicated CI runner.
+
+### Why
+
+SSM removes inbound SSH rules and the always-on management-host cost while allowing IAM-controlled tunnel initiation. A controller outside the VPC does not need direct private-IP routing for this transport.
+
+### Consequences
+
+The controller needs AWS CLI, Session Manager plugin, and narrowly scoped session permissions. `AmazonSSMManagedInstanceCore` on a target is not controller permission to start sessions. SSH authentication, host-key verification, and sudo remain separate controls. CloudTrail can record session API activity, but Session Manager cannot capture SSH command contents. Public-key provisioning for replacement nodes remains unresolved; the manual trusted-SSM step is only for this test. Validate SSM Online status, strict SSH, Ansible ping, and become on one node before declaring the transport complete. Review any plan destruction of existing management resources explicitly; no apply is performed by this change. Future CI controller placement will be designed separately.
+
+## Historical decision: Use an AWS control host as the Ansible and runner control plane (superseded for current access iteration).
+
+The earlier approach placed Ansible on a small EC2 control host with private-network access to Vault. Its direct SSH path was tested, but the host was not necessary once laptop SSH-over-SSM was validated. This section records former trade-offs, not current deployment instructions. Future CI controller placement remains undecided.
+
+### Benefits
+
+- Keeps the Vault cluster private and reduces the attack surface
+- Provides a central control point for Ansible orchestration; command auditing requires additional controls
+- Allows a GitHub self-hosted runner to access private Vault nodes over the VPC without exposing them publicly
+- Makes AWS-native operations and SSM break-glass access simpler
+- Supports private-network automation without requiring laptop VPC connectivity
+
+### Trade-offs
+
+- Adds one small EC2 budget item for the control host
+- Requires a clearly scoped security group and SSH access policy
+- Requires disciplined key handling, runner registration, and least-privilege IAM design
+- A runner is still an EC2 instance and must be treated as a controlled operational component rather than a stateless abstraction
+
 ## Decision: Use AWS KMS for auto-unseal.
 
 AWS KMS removes the need for manual unseal during EC2 restarts or replacement and keeps the cluster recoverable in a native AWS environment. It also requires tightly scoped IAM permissions and a clear separation between KMS, Raft, and S3 responsibilities.
@@ -106,5 +147,5 @@ Vault nodes require outbound access to the HashiCorp RPM and OS repositories, KM
 
 - Three NAT Gateways and two interface endpoint services (KMS and EC2, each with endpoint network interfaces in all three AZs) add recurring cost; review estimates before apply.
 - Security-group HTTPS egress through NAT is not destination-domain filtering. Use an internal mirror or egress control if public HTTPS needs tighter restriction.
-- The current test instance was in a separate VPC with a public IP; its successful RPM installation does not validate this private egress design.
-- The three NAT Gateways, Elastic IPs, and same-AZ private default routes are deployed. The Vault security group still lacks HTTPS egress, and KMS/EC2 interface endpoints are not implemented. Review the plan and cost impact before adding these remaining resources.
+- Earlier package tests used a public instance in another VPC; the operator subsequently reported successful installation on one private node. This does not validate egress across every AZ or actual Vault KMS seal operations.
+- Three NAT Gateways, Elastic IPs, same-AZ private routes, and Vault outbound TCP 443 are implemented. KMS/EC2 interface endpoints are not implemented; AWS API HTTPS currently uses NAT. Endpoints are a planned private-connectivity improvement, not a prerequisite for the current NAT-backed SSM test. Review their plan and cost impact before adding them.
