@@ -28,6 +28,11 @@ resource "aws_iam_role_policy" "auto_unseal" {
   })
 }
 
+resource "aws_iam_role_policy_attachment" "ssm_managed_instance_core" {
+  role       = aws_iam_role.this.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "this" {
   name = "${var.name_prefix}-node-instance-profile"
   role = aws_iam_role.this.name

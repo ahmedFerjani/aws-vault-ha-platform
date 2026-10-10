@@ -56,7 +56,7 @@ resource "aws_launch_template" "this" {
 resource "aws_autoscaling_group" "this" {
   name                = "${var.name_prefix}-nodes"
   min_size            = 0
-  desired_capacity    = 0
+  desired_capacity    = 1
   max_size            = 3
   vpc_zone_identifier = var.private_subnet_ids
   target_group_arns   = [var.target_group_arn]
