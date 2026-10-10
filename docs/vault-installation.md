@@ -12,6 +12,7 @@ The managed server configuration uses Raft at `/opt/vault/data`, AWS KMS auto-un
 
 ## Security and operations
 
+- The packaged unit requires `/etc/vault.d/vault.env`. Systemd reads it as root before launching the service; it does not need to be readable or writable by the Vault account. The role preserves its contents but enforces `root:root` mode `0600`. Do not print environment values into shared logs or put application/root tokens in this file.
 - Pin the package version and RPM release in role defaults; review both together when upgrading.
 - Keep GPG package verification enabled; verify the HashiCorp RPM signing key through a trusted source before production use.
 - Keep Vault configuration root-owned and readable by the service group; keep Raft data writable by the `vault` service user.
@@ -21,9 +22,42 @@ The managed server configuration uses Raft at `/opt/vault/data`, AWS KMS auto-un
 
 ## Validation
 
+Controlled-startup evidence supplied on 2026-10-11: `systemctl start vault.service` succeeded, followed by `active` and still `disabled`. Curl used `--noproxy '*'` and `--resolve vault.ahmedferjani.com:8200:127.0.0.1` with normal certificate verification (no `-k`). It returned HTTP `501` and JSON `initialized: false`, `sealed: true`, `standby: true`, `version: 2.1.1`, `enterprise: false`. This validates local hostname/trust verification, a running Vault API listener, and the expected uninitialized health response. It does not validate initialization, KMS-backed auto-unseal after restart, NLB/public DNS, leader election, or Raft HA. `standby: true` on an uninitialized sealed node is not evidence of a joined follower. The role still stops/disables Vault when reapplied; manual startup did not change that default.
+
+The operator subsequently confirmed `/etc/vault.d/vault.env` is `root:root 0600` on 2026-10-11. This verifies live permissions, not environment values or post-correction idempotency.
+
+Additional operator evidence on 2026-10-11: the required environment file exists with package-provided ownership/mode `vault:vault 0644`; a depth-limited listing of `/opt/vault/data` returned no entries. No prior Raft files were observed, but Vault initialization has not been tested. The environment file's world-readable mode and service-account ownership are unnecessary even though the parent directory restricts access. The role now enforces `root:root 0600` without overwriting contents. Syntax validation and a repeated deployment are required to verify this correction; live correction is not yet confirmed. Do not assume the environment is empty or free of overrides merely because it is package-provided; review variable names without sharing values before startup.
+
+Read-only private-node evidence supplied on 2026-10-11: hostname `ip-10-16-1-250.ec2.internal`; Vault CLI v2.1.1 and RPM `vault-2.1.1-1.x86_64`; service `inactive` and `disabled`. The packaged systemd unit runs as `vault:vault` with `ExecStart=/usr/bin/vault server -config=/etc/vault.d/vault.hcl` and a required `EnvironmentFile=/etc/vault.d/vault.env`. The rendered HCL uses private-IP API/cluster addresses, Raft at `/opt/vault/data`, TLS 1.2 minimum, and the expected AWS KMS alias. Configuration and TLS files are `root:vault` mode `0640`; their directories are `root:vault` mode `0750`; Raft data is `vault:vault` mode `0700`. Service-user checks confirmed config/cert/key readability and Raft-directory writability. The remote certificate SAN and validity match the local certificate (expiry 2027-01-03). `kms:DescribeKey` resolved the configured alias to enabled symmetric-use key `4e54205b-386a-4633-8316-0f00d6a542ef` with usage `ENCRYPT_DECRYPT`. This proves metadata access, not KMS Encrypt/Decrypt or automatic unseal. Before controlled startup, verify that the required environment file exists, review only its variable names (never expose values), and check for prior Raft data without deleting it. No runtime startup, TLS handshake, initialization, or HA result is claimed. The certificate does not cover the private IP; live TLS tests must use the certified hostname with an explicit local destination, not disable verification.
+
 Private-node installation milestone (2026-10-10): the operator reported successful execution of `ansible/site.yml` limited to `vault-node-1` (`i-052c2ed3f740eeaca`) from the laptop using SSH over SSM, followed by a second run with `changed=0` and a check confirming Vault is installed. The full recap and exact installed version output were not supplied. Before deployment, local certificate checks showed SAN `vault.ahmedferjani.com`, validity from 2026-10-05 to 2027-01-03, and matching certificate/private-key public components; playbook syntax check passed. No private-key contents were printed. This validates operator-reported installation and repeated-run idempotency on one private node, not a running Vault service or HA cluster. The role deliberately stops and disables Vault; live service state, installed package version, remote file permissions, rendered HCL, KMS seal access, and TLS handshake should be checked separately before any startup or initialization. Never initialize every node independently.
 
-Historical public-test-host evidence: the role passed `ansible-playbook --syntax-check` and was applied to the disposable `vault-test` host. A second run reported `changed=0`. The rendered HCL points Raft at `/opt/vault/data`, uses the instance private IP for API and cluster addresses, and configures the KMS seal and TLS file paths. The config was `root:vault` mode `0640`; Raft data was `vault:vault` mode `0700`. These file checks have not yet been repeated on the new private node.
+Historical public-test-host evidence: the role passed `ansible-playbook --syntax-check` and was applied to the disposable `vault-test` host. A second run reported `changed=0`. The rendered HCL points Raft at `/opt/vault/data`, uses the instance private IP for API and cluster addresses, and configures the KMS seal and TLS file paths. The config was `root:vault` mode `0640`; Raft data was `vault:vault` mode `0700`. Equivalent private-node file checks were supplied on 2026-10-11 as recorded above.
+
+## Controlled single-node startup test (validated locally on 2026-10-11)
+
+Start only the inspected, non-serving node with no prior Raft entries observed. This does not initialize Vault, enable it at boot, add peers, or change AWS infrastructure. Startup can create storage files and contact KMS; do not delete those files. Repeat preflight after replacement or state changes. Review the environment file locally for unexpected overrides without sharing its values. Rerunning the installation playbook will stop the test service.
+
+Inside the node's SSM session:
+
+```bash
+sudo systemctl start vault.service
+sudo systemctl is-active vault.service
+sudo systemctl is-enabled vault.service
+```
+
+Expected: `active` and still `disabled`. On failure, stop and inspect `sudo journalctl -u vault.service -n 60 --no-pager` locally; redact sensitive information before sharing excerpts.
+
+Verify the certificate hostname while connecting to the local listener, using normal CA verification and no proxy:
+
+```bash
+curl --noproxy '*' --resolve vault.ahmedferjani.com:8200:127.0.0.1 \
+	--connect-timeout 5 --max-time 15 --silent --show-error \
+	--write-out '\nHTTP %{http_code}\n' \
+	https://vault.ahmedferjani.com:8200/v1/sys/health
+```
+
+Expected: HTTP `501`, `initialized: false`, and normally `sealed: true`. This is expected readiness behavior, not TLS failure; do not use `--fail` for this check. If initialized is true, investigate existing state rather than initializing again. Success validates local TLS trust/hostname and health routing, not NLB, public DNS, auto-unseal, or HA. Never use `-k`. Record the response before designing initialization and secure recovery-key/root-token handling. Optional rollback for this non-serving test is `sudo systemctl stop vault.service`; do not remove storage.
 
 ## Test inventory setup
 

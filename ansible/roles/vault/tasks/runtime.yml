@@ -1,4 +1,12 @@
 ---
+- name: Protect the packaged systemd environment file without changing its contents
+  ansible.builtin.file:
+    path: /etc/vault.d/vault.env
+    state: file
+    owner: root
+    group: root
+    mode: "0600"
+
 - name: Configure Vault server settings
   ansible.builtin.template:
     src: vault.hcl.j2
