@@ -23,6 +23,6 @@ No NLB listener, Route 53 alias, KMS/EC2 interface endpoints, or S3 backup infra
 
 ### Validation approach
 
-Run `terraform fmt -check`, `terraform validate`, and `terraform plan` from this directory. The management-module cleanup on 2026-10-10 passed formatting and validation, found no management resources in current state, and produced a live plan with no changes. This does not validate Vault runtime behavior.
+Run `terraform fmt -check`, `terraform validate`, and `terraform plan` from this directory. These checks validate Terraform configuration and planned infrastructure changes; they do not validate Vault runtime behavior.
 
 Review every plan before applying, including replacement, IAM, network exposure, and recurring costs. Never terminate multiple Raft nodes automatically; a three-node cluster requires two for quorum. Do not use ASG capacity changes as an unattended shutdown procedure for initialized Vault. Protect state as sensitive data and preserve required snapshots and the original seal key before teardown. The KMS key's `prevent_destroy` intentionally blocks ordinary Terraform destruction of that key; do not remove the safeguard merely to make destroy succeed. NAT Gateways, EIPs, and the NLB incur costs even while Vault is stopped.

@@ -16,15 +16,15 @@ A three-node cluster provides a quorum of 2, so one EC2 node can fail without lo
 - Losing two nodes can still break quorum and impact availability
 - The system requires more operational discipline than a stateless app
 
-## Decision: Use SSH over SSM for the current laptop-driven access iteration.
+## Decision: Use laptop SSH over SSM for private-node administration.
 
 ### Context
 
-Direct management-to-node SSH passed its one-node tests, but required a control host and inbound TCP 22. The operator now chooses laptop-driven SSH tunneled through Session Manager. This supersedes the requirement for a management EC2 host. After successful laptop access and operator-reported Ansible deployment, the unused module, commented call, and management-only inputs were removed. A resource-address check found no management resources in current Terraform state; cleanup does not execute an AWS apply.
+The operator needs to configure private Vault nodes without a public SSH path or an always-on management instance.
 
 ### Decision
 
-Remove the management module call and Vault management SSH ingress from the active root configuration. Use ordinary SSH via `AWS-StartSSHSession`, with instance IDs, verified host keys, and a dedicated laptop key. Keep Vault nodes private and their existing SSM instance role and outbound HTTPS connectivity. Playbook tasks need not change; inventory/SSH configuration must change after fresh instance discovery. Do not initialize Vault as part of access testing.
+Use ordinary SSH via `AWS-StartSSHSession`, with instance IDs, verified host keys, and a dedicated laptop key. Keep Vault nodes private and use their SSM instance role and outbound HTTPS connectivity. Ansible tasks do not need transport-specific changes; inventory/SSH configuration must target fresh instance IDs. Access setup, connectivity testing, and deployment are separate steps. Do not initialize Vault as part of access testing.
 
 ### Alternatives Considered
 
@@ -36,26 +36,7 @@ SSM removes inbound SSH rules and the always-on management-host cost while allow
 
 ### Consequences
 
-The controller needs AWS CLI, Session Manager plugin, and narrowly scoped session permissions. `AmazonSSMManagedInstanceCore` on a target is not controller permission to start sessions. SSH authentication, host-key verification, and sudo remain separate controls. CloudTrail can record session API activity, but Session Manager cannot capture SSH command contents. Public-key provisioning for replacement nodes remains unresolved; the manual trusted-SSM step is only for this test. Validate SSM Online status, strict SSH, Ansible ping, and become on one node before declaring the transport complete. Review any plan destruction of existing management resources explicitly; no apply is performed by this change. Future CI controller placement will be designed separately.
-
-## Historical decision: Use an AWS control host as the Ansible and runner control plane (superseded for current access iteration).
-
-The earlier approach placed Ansible on a small EC2 control host with private-network access to Vault. Its direct SSH path was tested, but the host was not necessary once laptop SSH-over-SSM was validated. This section records former trade-offs, not current deployment instructions. Future CI controller placement remains undecided.
-
-### Benefits
-
-- Keeps the Vault cluster private and reduces the attack surface
-- Provides a central control point for Ansible orchestration; command auditing requires additional controls
-- Allows a GitHub self-hosted runner to access private Vault nodes over the VPC without exposing them publicly
-- Makes AWS-native operations and SSM break-glass access simpler
-- Supports private-network automation without requiring laptop VPC connectivity
-
-### Trade-offs
-
-- Adds one small EC2 budget item for the control host
-- Requires a clearly scoped security group and SSH access policy
-- Requires disciplined key handling, runner registration, and least-privilege IAM design
-- A runner is still an EC2 instance and must be treated as a controlled operational component rather than a stateless abstraction
+The laptop requires AWS CLI, Session Manager plugin, and narrowly scoped session permissions. `AmazonSSMManagedInstanceCore` on a target is not controller permission to start sessions. SSH authentication, host-key verification, and Linux privilege escalation remain separate controls. CloudTrail can record session API activity, but Session Manager cannot capture SSH command contents. Manual public-key provisioning supports infrastructure recreation; automated replacement access and future CI controller placement are separate work. The operator reports the scripts worked after recreation; retain strict host-key checking.
 
 ## Decision: Use AWS KMS for auto-unseal.
 

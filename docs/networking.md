@@ -33,7 +33,7 @@ Before applying changes, run `terraform fmt -check`, `terraform validate`, and `
 
 ### Design for Vault nodes
 
-Vault ASG instances launch in private subnets. Three per-AZ NAT Gateways and Elastic IPs are implemented in the matching public subnets, and each private subnet has a default route through its same-AZ NAT. Earlier RPM tests used a separate public host; subsequently, the operator reported successful Vault installation on one private node through laptop Ansible over SSM. This exercises that node's repository access, not all three AZs or actual Vault KMS operations.
+Vault ASG instances launch in private subnets. Three per-AZ NAT Gateways and Elastic IPs are implemented in the matching public subnets, and each private subnet has a default route through its same-AZ NAT. The operator reports successful Vault package installation on one private node; each AZ and KMS operation still require validation.
 
 Provide private AWS API access using interface VPC endpoints for KMS and EC2 in all three Vault AZs, with private DNS enabled. The endpoint security group should accept TCP 443 only from the Vault-node security group; Vault-node egress should allow TCP 443 to those endpoint security groups. This supports KMS auto-unseal and AWS Raft peer discovery without routing those AWS API calls through the public internet.
 

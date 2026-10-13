@@ -26,6 +26,7 @@
       - item.stat.isreg
     fail_msg: Required TLS source file is missing or not a regular file.
   loop: "{{ vault_tls_source_stats.results }}"
+  no_log: true
 
 - name: Create restrictive Vault TLS directory
   ansible.builtin.file:
