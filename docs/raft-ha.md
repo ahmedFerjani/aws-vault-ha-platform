@@ -6,9 +6,11 @@
 
 ## Current single-node preflight
 
-Read-only inspection on 2026-10-13 confirmed the current ASG desired capacity is one and its instance is `InService`/healthy with SSM Online. Vault 2.1.1 is installed; the Raft data directory had no entries before startup. The configuration, TLS, Raft, and environment-file ownership/modes match the Ansible role; the node certificate SAN is `vault.ahmedferjani.com`. The AWS KMS alias configured in HCL resolves to an enabled `ENCRYPT_DECRYPT` key. This is key-metadata evidence, not a KMS operation by Vault.
+Read-only inspection on 2026-10-13 confirmed the current ASG desired capacity is one and its instance is `InService`/healthy with SSM Online. Vault 2.1.1 is installed; before startup the Raft data directory had no entries. Startup has since created `node-id`, `vault.db`, and `raft/raft.db` while Vault remains uninitialized. Preserve these files; uninitialized does not mean the data directory is empty. The configuration, TLS, and environment-file ownership/modes match the Ansible role; the certificate SAN is `vault.ahmedferjani.com`. The AWS KMS alias resolves to an enabled `ENCRYPT_DECRYPT` key. This is metadata evidence, not a KMS operation by Vault.
 
-The current rendered HCL advertises `https://vault.ahmedferjani.com:443` as `api_addr`; `cluster_addr` remains this node's private IP on 8201. The operator verified both values after Ansible deployment. Vault is active but disabled at boot. The NLB listener and DNS alias are not implemented, so the advertised client endpoint is not reachable or runtime-validated yet.
+Terraform apply added the region-limited `ec2:DescribeInstances` permission and `VaultCluster=vault-ha-dev` to the latest launch-template version without replacing the current node. The operator then tagged the current ASG instance; read-only AWS inspection confirmed it has `VaultCluster=vault-ha-dev` and remains SSM Online. The launch-template tag covers future instances.
+
+The current rendered HCL advertises `https://vault.ahmedferjani.com:443` as `api_addr`; `cluster_addr` remains this node's private IP on 8201. The operator verified both values after Ansible deployment. Vault is currently inactive and disabled at boot. The NLB listener and DNS alias are not implemented, so the advertised client endpoint is not reachable or runtime-validated yet.
 
 Ansible check-mode preview showed only the expected `api_addr` change; the guarded deployment applied it. The operator verified the resulting address values.
 
@@ -45,9 +47,31 @@ AWS NLB fails open when all targets are unhealthy (and for an empty target group
 
 ## Raft joining and peer TLS
 
-Use Raft `retry_join` with AWS discovery filtered by a dedicated cluster tag. The launch template must apply that tag. The Vault node role needs only the EC2 discovery permissions required by the selected Vault/go-discover syntax; verify the supported IAM resource scoping before implementation. Discovery finds join candidates but does not preserve Raft identity or membership: a replacement must join the existing cluster, never initialize a separate one.
+### AWS discovery tag and IAM
 
-AWS discovery returns private addresses. The join operation contacts the leader API on TCP 8200 using HTTPS; set `leader_tls_servername` to `vault.ahmedferjani.com`, which is present in the certificate SAN, and retain CA verification. Confirm the exact Vault 2.1.1 `retry_join` syntax and CA source before templating it. Ensure nodes can exchange API traffic on TCP 8200 and cluster traffic on TCP 8201 through the Vault security group. Never disable TLS verification to make discovery/join succeed.
+Terraform tags future launch-template instances with `VaultCluster = var.name_prefix` (currently `vault-ha-dev`). The tag must be on each EC2 instance, not only its volume. The operator also tagged the running first node; AWS inspection confirmed `VaultCluster=vault-ha-dev` and SSM Online. The tag is the discovery filter, not an IAM authorization boundary.
+
+Vault's AWS `go-discover` provider takes `provider=aws`, `region`, `tag_key`, `tag_value`, and `addr_type` (the provider's option spelling is `addr_type`). It filters for running EC2 instances and returns their private addresses. The proposed setting is:
+
+```hcl
+retry_join {
+	auto_join             = "provider=aws region=us-east-1 tag_key=VaultCluster tag_value=vault-ha-dev addr_type=private_v4"
+	auto_join_scheme      = "https"
+	auto_join_port        = 8200
+	leader_tls_servername = "vault.ahmedferjani.com"
+	leader_ca_cert_file   = "/etc/pki/tls/certs/ca-bundle.crt"
+}
+```
+
+The guarded Ansible deployment applied the `retry_join` block and completed `ok=16 changed=2 unreachable=0 failed=0`. Read-only verification confirmed the live HCL contains AWS private-IPv4 discovery, HTTPS API join on port 8200, the certificate SAN as `leader_tls_servername`, and the readable Amazon Linux CA bundle. The role left Vault inactive and disabled. Startup-created Raft files (`node-id`, `vault.db`, `raft/raft.db`, and the snapshots directory) remain; preserve them. The node is still uninitialized; no follower has been launched or joined, and AWS discovery/TLS join has not been runtime-tested.
+
+The discovery call needs only `ec2:DescribeInstances`. AWS does not support resource-level scoping for that action, so the policy must use `Resource = "*"`; AWS documents the `ec2:Region` condition key for restricting EC2 actions to `us-east-1`. Do not claim that the request's tag filters enforce IAM authorization: they filter discovery results, not the scope of the permission. The role can describe instances in the allowed region, but Vault's discovery request will use the dedicated tag. No `RunInstances`, `CreateTags`, stop, or terminate permissions are needed for discovery.
+
+Discovery finds join candidates but does not preserve Raft identity or membership: a replacement must join the existing cluster, never initialize a separate one.
+
+### TLS during join
+
+AWS discovery returns private IPs, while the server certificate identifies `vault.ahmedferjani.com`. At join time Vault contacts the candidate API on HTTPS/TCP 8200; `leader_tls_servername` selects the certificate SAN to verify and `leader_ca_cert_file` supplies trusted roots. The CA bundle path was checked on the current node. Do not disable certificate verification. After joining, peer/Raft traffic uses private TCP 8201 with Vault's cluster mTLS credentials. The Vault security group allows peer TCP 8200 and 8201 between group members.
 
 ## First-node initialization and lifecycle
 
@@ -60,7 +84,7 @@ Configure the same join behavior on all nodes, initialize only the designated fi
 1. **Complete:** read-only preflight the current instance. No Raft entries or initialized state were observed before startup.
 2. **Complete:** preview and apply the HCL address change; the operator verified rendered `api_addr` and private `cluster_addr`.
 3. Review/approve the standby-forwarding target-health and cross-zone NLB policy. The shared NLB `api_addr` is selected architecture; client redirects and fallback behavior need live validation.
-4. Agree on secure initialization-output capture and implement AWS discovery IAM/tagging plus TLS-verified `retry_join` before initializing the cluster.
+4. **Complete:** Terraform discovery IAM/tagging is applied, the current instance has the cluster tag, and the guarded Ansible deployment rendered `retry_join`; Vault is left stopped/disabled. Live discovery and follower joining remain untested.
 5. **Complete:** start the first node with boot enablement still disabled; hostname-verified local TLS returned the expected uninitialized/sealed health status.
 6. Initialize the first node once using the approved secure procedure; verify initialized/unsealed state. This exercises KMS sealing but not restart auto-unseal.
 7. Perform a controlled restart of the single-node lab and verify automatic KMS unseal. Expect temporary service downtime; do not enable boot startup yet.

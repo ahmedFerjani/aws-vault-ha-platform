@@ -7,3 +7,8 @@ variable "auto_unseal_key_arn" {
   description = "ARN of the KMS key used for Vault auto-unseal"
   type        = string
 }
+
+variable "discovery_region" {
+  description = "AWS region in which Vault Raft auto-join discovers tagged peers"
+  type        = string
+}

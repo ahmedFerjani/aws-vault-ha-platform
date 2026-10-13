@@ -69,6 +69,7 @@ module "vault_node_iam" {
 
   name_prefix         = local.name_prefix
   auto_unseal_key_arn = module.vault_auto_unseal.key_arn
+  discovery_region    = local.region
 }
 
 module "vault_node_compute" {

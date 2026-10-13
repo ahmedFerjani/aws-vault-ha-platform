@@ -28,6 +28,25 @@ resource "aws_iam_role_policy" "auto_unseal" {
   })
 }
 
+resource "aws_iam_role_policy" "raft_discovery" {
+  name = "${var.name_prefix}-raft-discovery"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ec2:DescribeInstances"]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "ec2:Region" = var.discovery_region
+        }
+      }
+    }]
+  })
+}
+
 resource "aws_iam_role_policy_attachment" "ssm_managed_instance_core" {
   role       = aws_iam_role.this.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"

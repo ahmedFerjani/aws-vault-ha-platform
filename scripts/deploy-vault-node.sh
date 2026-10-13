@@ -11,7 +11,8 @@ script_dir=$(cd "$(dirname "$0")" && pwd)
 export ANSIBLE_HOST_KEY_CHECKING=True
 
 # Refuse patterns such as "all" that would expand the deployment beyond one host.
-selected_hosts=$(ansible "$host" -i "$inventory" --list-hosts | awk 'NR > 1 && NF { print $1 }')
+# Ansible formats the host-count heading as "hosts (N):"; ignore that heading.
+selected_hosts=$(ansible "$host" -i "$inventory" --list-hosts | awk -v expected="$host" '$1 == expected { found++; next } $1 == "hosts" { next } NF { unexpected++ } END { if (found == 1 && unexpected == 0) print expected; else exit 1 }')
 [[ $selected_hosts == "$host" ]] || {
   echo "Expected exactly the inventory host '$host'; selected: ${selected_hosts:-none}" >&2
   exit 1
@@ -24,7 +25,11 @@ bash "$script_dir/check-ansible-connectivity.sh" "$inventory" "$host"
 # This role stops/disables Vault, so require a deliberate disposable-node confirmation.
 echo "WARNING: the Vault role stops and disables the service on '$host'."
 echo "Run only on a disposable, non-serving node; this can interrupt service/quorum."
-read -r -p "Type DEPLOY-$host to continue: " confirmation
+if [[ -n ${VAULT_DEPLOY_CONFIRM:-} ]]; then
+  confirmation=$VAULT_DEPLOY_CONFIRM
+else
+  read -r -p "Type DEPLOY-$host to continue: " confirmation
+fi
 [[ $confirmation == "DEPLOY-$host" ]] || { echo "Cancelled; playbook was not run."; exit 1; }
 
 # Limit the play to the exact host alias checked above.

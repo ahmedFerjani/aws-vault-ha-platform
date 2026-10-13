@@ -1,6 +1,7 @@
 locals {
   instance_tags = merge(var.default_tags, {
-    Name = "${var.name_prefix}-node"
+    Name         = "${var.name_prefix}-node"
+    VaultCluster = var.name_prefix
   })
 
   volume_tags = merge(var.default_tags, {

@@ -6,5 +6,11 @@ hashicorp_rpm_gpg_key_url: https://rpm.releases.hashicorp.com/gpg
 kms_region: us-east-1
 auto_unseal_kms_key_id: alias/vault-ha-dev-auto-unseal
 vault_api_addr: https://vault.ahmedferjani.com:443
+raft_auto_join_region: us-east-1
+raft_auto_join_tag_key: VaultCluster
+# Keep this equal to the Terraform name prefix so nodes discover only their cluster.
+raft_auto_join_tag_value: vault-ha-dev
+raft_auto_join_tls_servername: vault.ahmedferjani.com
+raft_auto_join_ca_cert_file: /etc/pki/tls/certs/ca-bundle.crt
 tls_cert_file: /opt/vault/tls/tls.crt
 tls_key_file: /opt/vault/tls/tls.key

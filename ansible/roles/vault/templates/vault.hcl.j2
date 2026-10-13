@@ -5,6 +5,14 @@ disable_mlock = true
 
 storage "raft" {
   path = "/opt/vault/data"
+
+  retry_join {
+    auto_join             = "provider=aws region={{ raft_auto_join_region }} tag_key={{ raft_auto_join_tag_key }} tag_value={{ raft_auto_join_tag_value }} addr_type=private_v4"
+    auto_join_scheme      = "https"
+    auto_join_port        = 8200
+    leader_tls_servername = "{{ raft_auto_join_tls_servername }}"
+    leader_ca_cert_file   = "{{ raft_auto_join_ca_cert_file }}"
+  }
 }
 
 listener "tcp" {
