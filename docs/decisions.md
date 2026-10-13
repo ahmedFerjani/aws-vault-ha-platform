@@ -91,6 +91,12 @@ The NLB will forward TCP port 443 to the Vault API target port without terminati
 - Certificate renewal and deployment become an operational responsibility; private keys must never be committed.
 - Compared with NLB TLS termination, the NLB does not need an ACM listener certificate and does not see plaintext requests.
 
+## Proposal pending review: Vault target health and NLB cross-zone policy
+
+The architecture selects the stable NLB hostname as the shared `api_addr` because clients are intended to access Vault only through that load balancer. The [Raft HA design](raft-ha.md) recommends retaining Vault's `standbyok=true` health behavior so unsealed standbys can receive requests and forward them to the active node, with NLB cross-zone routing enabled. HashiCorp documents possible redirect loops when a shared load-balancer address is used in fallback redirect behavior. An active-only health check is an alternative, but can leave the NLB without healthy targets during elections and interacts with NLB fail-open behavior.
+
+The recommended health/cross-zone implementation is not yet approved or validated. Test normal forwarding, redirect fallback, leader transitions, health convergence, and client retries against the actual NLB/three-node cluster before enabling the public listener. If these tests fail, revisit client reachability and per-node API addressing before changing Vault configuration.
+
 ## Decision: Use AWS discovery for Raft peer joining; keep one public DNS endpoint.
 
 Use `vault.ahmedferjani.com` as the public client endpoint, pointing to the NLB through a Route 53 alias. Do not assign permanent numbered private DNS names to ASG instances. Configure Vault Raft `retry_join` with AWS discovery, selecting eligible instances by a dedicated cluster tag and resolving their current private IPv4 addresses. Each node advertises its current private address as `cluster_addr`; `api_addr` advertises the public NLB hostname for client redirects.

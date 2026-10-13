@@ -5,5 +5,6 @@ package_release: "1"
 hashicorp_rpm_gpg_key_url: https://rpm.releases.hashicorp.com/gpg
 kms_region: us-east-1
 auto_unseal_kms_key_id: alias/vault-ha-dev-auto-unseal
+vault_api_addr: https://vault.ahmedferjani.com:443
 tls_cert_file: /opt/vault/tls/tls.crt
 tls_key_file: /opt/vault/tls/tls.key
