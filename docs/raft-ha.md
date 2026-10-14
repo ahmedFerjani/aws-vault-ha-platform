@@ -77,6 +77,16 @@ AWS discovery returns private IPs, while the server certificate identifies `vaul
 
 Initialization is a one-time stateful operation on exactly one confirmed-empty node. Decide secure handling of recovery keys and the initial root token before running `vault operator init`; do not put output in Git, Terraform state, ordinary automation logs, shell history, or ephemeral instance storage. With KMS auto-unseal, initialization produces recovery keys; they do not replace the KMS key and do not manually unseal Vault. Preserve the original KMS key if initialized data must be recovered.
 
+### Recovery secret infrastructure — iteration 1 design
+
+The first implementation step is intentionally limited to AWS infrastructure: create a dedicated recovery KMS key and one empty Secrets Manager secret named `${name_prefix}/recovery-bundle`. The recovery key is separate from Vault's auto-unseal key. Terraform must create only the secret container and metadata; no root token, recovery key, `SecretString`, generated credential, or Vault initialization data may enter Terraform state.
+
+The key and secret receive deletion protection (`prevent_destroy`) and a 30-day KMS key deletion window. The secret is encrypted with that key. The key policy follows the existing account-level IAM delegation convention; the later bootstrap role's IAM permissions must be explicitly restricted to this exact key and secret, require Secrets Manager via `kms:ViaService`, and constrain the `SecretARN` encryption context. This iteration does not create that role because the authorized deployment principal/trust relationship has not yet been configured. It also does not create a secret value or initialize Vault.
+
+Terraform outputs may expose only the secret name/ARN and recovery KMS key ARN. These are identifiers, not credentials. The intended single JSON bundle (five 3-of-5 recovery shares plus the initial root token) is a later bootstrap workflow decision; storing both together simplifies this lab but means a reader of the secret obtains both, so retrieval permission is break-glass only.
+
+Implemented in Terraform source: the `vault_recovery` module creates the separate KMS key, alias, and empty `vault-ha-dev/recovery-bundle` secret. Root outputs expose only the secret name/ARN and KMS key ARN. Formatting/static validation and plan review are pending; no apply has been run. Before apply, check the plan for exactly one KMS key, its alias, and one empty Secrets Manager secret; confirm that no secret version is planned. Applying is a separately reviewed AWS change with recurring KMS/Secrets Manager charges. No cross-controller lock is planned: operations assume a single authorized bootstrap operator, documented as an operational constraint. The bootstrap role and its trust/IAM policy are deliberately a later step.
+
 Configure the same join behavior on all nodes, initialize only the designated first node, then start and join followers one at a time. Verify membership and health after each join. Do not initialize followers independently. Keep systemd boot enablement separate until restart and KMS auto-unseal have been validated.
 
 ## Safe implementation sequence

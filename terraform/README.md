@@ -13,6 +13,7 @@ Infrastructure and single-node installation foundations are implemented. Terrafo
 - NLB and TCP 8200 instance target group with Vault HTTPS health checks
 - Restrictive NLB/Vault security groups, no inbound SSH, and outbound HTTPS
 - Auto-unseal KMS key with rotation, 30-day deletion window, and `prevent_destroy`
+- Separate recovery KMS key and empty Secrets Manager recovery-bundle secret, both protected from ordinary destruction
 - Vault EC2 role with key-scoped KMS permissions and SSM registration permissions
 - Private launch template with IMDSv2 and encrypted EBS
 - ASG with minimum 0, desired 1, maximum 3, and target-group registration
@@ -20,6 +21,8 @@ Infrastructure and single-node installation foundations are implemented. Terrafo
 ### Not yet implemented or validated
 
 No NLB listener, Route 53 alias, KMS/EC2 interface endpoints, or S3 backup infrastructure is implemented. AWS Raft discovery, safe replacement bootstrap, three-node HA, and runtime KMS auto-unseal remain pending. The ASG is not a completed stateful replacement solution. SSH public-key authorization is still manual; refresh inventory and verified host keys after each node replacement. See [installation instructions](../docs/vault-installation.md).
+
+The recovery bundle secret contains no value; Terraform manages only its metadata and the dedicated encryption key. Root outputs expose the non-secret secret name/ARN and recovery KMS key ARN. A dedicated bootstrap IAM role and one-time Ansible/Python bootstrap are not implemented yet. Do not apply the recovery-resource plan until IAM trust and usage permissions are designed and reviewed.
 
 ### Validation approach
 

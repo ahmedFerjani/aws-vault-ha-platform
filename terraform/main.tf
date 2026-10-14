@@ -64,6 +64,14 @@ module "vault_auto_unseal" {
   account_id  = local.account_id
 }
 
+module "vault_recovery" {
+  source = "./modules/vault-recovery"
+
+  name_prefix  = local.name_prefix
+  account_id   = local.account_id
+  default_tags = local.default_tags
+}
+
 module "vault_node_iam" {
   source = "./modules/vault-node-iam"
 

@@ -54,6 +54,28 @@ AWS KMS removes the need for manual unseal during EC2 restarts or replacement an
 - KMS is not Vault storage and must not be confused with Raft
 - S3 remains a backup destination, not a live storage backend
 
+## Decision: Store bootstrap recovery material in a separate Secrets Manager secret.
+
+### Context
+
+Vault initialization returns recovery-key shares and an initial root token once. They must be retained outside Terraform state, and the existing KMS key is dedicated to Vault auto-unseal rather than encrypting operator recovery material.
+
+### Decision
+
+Create one empty AWS Secrets Manager secret encrypted with a dedicated recovery KMS key. A later, separate bootstrap step will write a single JSON bundle to it. Terraform owns only the KMS key and secret metadata and never manages the secret value. The first infrastructure iteration deliberately does not add bootstrap IAM trust or execute initialization until the deployment principal is explicitly known.
+
+### Alternatives Considered
+
+- Reuse the auto-unseal key: rejected because it combines distinct security purposes and permission lifecycles.
+- Put values in Terraform variables/resources: rejected because secret values would enter state or plans.
+- Create separate secrets for each share and token immediately: deferred to avoid needless complexity for this single-operator lab; a combined bundle means break-glass read access exposes both.
+
+### Consequences
+
+- The recovery KMS key and secret incur recurring charges and are protected from ordinary Terraform destruction.
+- The later bootstrap identity must have narrowly scoped write/verification access; a separate break-glass identity handles retrieval. Vault EC2 nodes receive no recovery-secret permission.
+- The same-account secret is not an independent custody boundary. Loss of initialization output before persistence cannot be fixed by rerunning init; operations assume one authorized bootstrap operator and require a documented manual recovery response.
+
 ## Decision: Use an internet-facing NLB with private Vault nodes.
 
 Clients reach the Vault API through a TLS-enabled public NLB. The NLB is placed in public subnets across three Availability Zones; Vault EC2 instances remain in private subnets without public IPs or direct internet routes.
