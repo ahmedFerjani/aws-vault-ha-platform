@@ -19,7 +19,7 @@ selected_hosts=$(ansible "$host" -i "$inventory" --list-hosts | awk -v expected=
 }
 
 # Stop before deployment unless syntax, SSH-over-SSM, Python, and become all pass.
-ansible-playbook -i "$inventory" "$script_dir/../ansible/site.yml" --syntax-check
+ansible-playbook -i "$inventory" "$script_dir/../../ansible/site.yml" --syntax-check
 bash "$script_dir/check-ansible-connectivity.sh" "$inventory" "$host"
 
 # This role stops/disables Vault, so require a deliberate disposable-node confirmation.
@@ -33,4 +33,4 @@ fi
 [[ $confirmation == "DEPLOY-$host" ]] || { echo "Cancelled; playbook was not run."; exit 1; }
 
 # Limit the play to the exact host alias checked above.
-exec ansible-playbook -i "$inventory" "$script_dir/../ansible/site.yml" --limit "$host"
+exec ansible-playbook -i "$inventory" "$script_dir/../../ansible/site.yml" --limit "$host"

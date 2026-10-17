@@ -40,7 +40,7 @@ git check-ignore ansible/inventory/test.ini
 Run the laptop helper in terminal 1:
 
 ```bash
-bash scripts/prepare-ssm-ssh-laptop.sh i-REPLACE_WITH_INSTANCE_ID us-east-1
+bash scripts/access/prepare-ssm-ssh-laptop.sh i-REPLACE_WITH_INSTANCE_ID us-east-1
 ```
 
 It verifies EC2 is running and SSM Online, reuses `~/.ssh/vault-laptop` or creates an Ed25519 key if neither half exists, prints the laptop public key, and waits for the node host public key. It refuses to overwrite an existing private key. Leave this terminal open.
@@ -57,7 +57,7 @@ In that SSM shell, stage the node helper by running:
 sudo tee /tmp/authorize-ssm-ssh-node.sh >/dev/null
 ```
 
-Paste the complete contents of `scripts/authorize-ssm-ssh-node.sh` from the laptop editor and press Ctrl-D. Run it:
+Paste the complete contents of `scripts/access/authorize-ssm-ssh-node.sh` from the laptop editor and press Ctrl-D. Run it:
 
 ```bash
 sudo bash /tmp/authorize-ssm-ssh-node.sh
@@ -82,7 +82,7 @@ ssh-add -t 3600 ~/.ssh/vault-laptop
 Run the check-only preflight:
 
 ```bash
-bash scripts/check-ansible-connectivity.sh
+bash scripts/deployment/check-ansible-connectivity.sh
 ```
 
 With no arguments, it uses `ansible/inventory/private.ini` and `vault-node-1`. Override these with `INVENTORY HOST_ALIAS` arguments. The helper forces host-key checking, tests SSH/remote Python with Ansible ping, then tests `become` with read-only `id -u`. Expect `pong` and UID `0`. It exits nonzero on failure and never runs the playbook. The command module may label `id -u` `CHANGED` by default; the command itself does not alter the node.
@@ -98,7 +98,7 @@ ansible-playbook -i ansible/inventory/private.ini ansible/site.yml --syntax-chec
 Run the deployment helper:
 
 ```bash
-bash scripts/deploy-vault-node.sh
+bash scripts/deployment/deploy-vault-node.sh
 ```
 
 With no arguments, it uses `ansible/inventory/private.ini` and `vault-node-1`; override with `INVENTORY HOST_ALIAS`. It verifies that exactly one host is selected, runs syntax and connectivity checks, then requires typing `DEPLOY-vault-node-1` before deploying to that host only. Review the inventory target and TLS source paths before confirming.

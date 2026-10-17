@@ -79,13 +79,32 @@ Initialization is a one-time stateful operation on exactly one confirmed-empty n
 
 ### Recovery secret infrastructure — iteration 1 design
 
-The first implementation step is intentionally limited to AWS infrastructure: create a dedicated recovery KMS key and one empty Secrets Manager secret named `${name_prefix}/recovery-bundle`. The recovery key is separate from Vault's auto-unseal key. Terraform must create only the secret container and metadata; no root token, recovery key, `SecretString`, generated credential, or Vault initialization data may enter Terraform state.
+The recovery storage foundation is a dedicated KMS key and one empty Secrets Manager secret named `${name_prefix}/bootstrap-recovery`. The recovery key is separate from Vault's auto-unseal key. Terraform creates only the secret container and metadata; no root token, recovery key, `SecretString`, generated credential, or Vault initialization data enters Terraform state.
 
-The key and secret receive deletion protection (`prevent_destroy`) and a 30-day KMS key deletion window. The secret is encrypted with that key. The key policy follows the existing account-level IAM delegation convention; the later bootstrap role's IAM permissions must be explicitly restricted to this exact key and secret, require Secrets Manager via `kms:ViaService`, and constrain the `SecretARN` encryption context. This iteration does not create that role because the authorized deployment principal/trust relationship has not yet been configured. It also does not create a secret value or initialize Vault.
+The key and secret receive deletion protection (`prevent_destroy`) and a 30-day KMS key deletion window. The secret is encrypted with that key. The Terraform module also creates a bootstrap role trusted by the configured deployment IAM principal, with write/metadata access scoped to this secret and KMS use constrained to Secrets Manager and this secret's encryption context. The Vault EC2 instance role is not granted recovery-secret access.
 
-Terraform outputs may expose only the secret name/ARN and recovery KMS key ARN. These are identifiers, not credentials. The intended single JSON bundle (five 3-of-5 recovery shares plus the initial root token) is a later bootstrap workflow decision; storing both together simplifies this lab but means a reader of the secret obtains both, so retrieval permission is break-glass only.
+Terraform outputs expose only the secret name, recovery KMS key ARN, and bootstrap role ARN. These are identifiers, not credentials. The single JSON bundle contains five 3-of-5 recovery shares plus the initial root token. Keeping them together simplifies the lab, but anyone allowed to retrieve the secret obtains both; retrieval must therefore be break-glass only.
 
-Implemented in Terraform source: the `vault_recovery` module creates the separate KMS key, alias, and empty `vault-ha-dev/recovery-bundle` secret. Root outputs expose only the secret name/ARN and KMS key ARN. Formatting/static validation and plan review are pending; no apply has been run. Before apply, check the plan for exactly one KMS key, its alias, and one empty Secrets Manager secret; confirm that no secret version is planned. Applying is a separately reviewed AWS change with recurring KMS/Secrets Manager charges. No cross-controller lock is planned: operations assume a single authorized bootstrap operator, documented as an operational constraint. The bootstrap role and its trust/IAM policy are deliberately a later step.
+Implemented in Terraform source: the `vault_recovery` module creates the dedicated KMS key, alias, empty recovery secret, and bootstrap role. No secret value is configured by Terraform. Apply the module only when needed; KMS and Secrets Manager resources have recurring charges.
+
+### One-time bootstrap helper
+
+The single controller-side helper [bootstrap_vault_init.py](../scripts/vault-bootstrap/bootstrap_vault_init.py) has two operations. `preflight` assumes the Terraform-created role, validates the returned STS identity and account, checks the secret's KMS key, and refuses any existing secret version. Run this before initialization. `store` reads captured init JSON from stdin, checks for exactly five recovery shares, a non-empty root token, and 5-of-3 metadata, writes one JSON bundle, then verifies the exact version ID and `AWSCURRENT` label without reading the secret value back. A deterministic 64-character SHA-256 client token makes an identical retry idempotent; a different or unexpected existing version is rejected.
+
+The helper assumes one authorized operator at a time; there is no distributed lock. The source IAM identity must also be allowed to call `sts:AssumeRole` on the Terraform-created bootstrap role; the role's trust policy alone does not grant that permission. Install `boto3` from `scripts/vault-bootstrap/requirements.txt`. With Terraform outputs available, run preflight from the repository root before initialization:
+
+```bash
+python3 -m pip install -r scripts/vault-bootstrap/requirements.txt
+python3 scripts/vault-bootstrap/bootstrap_vault_init.py preflight \
+	--role-arn "$(terraform -chdir=terraform output -raw vault_bootstrap_role_arn)" \
+	--secret-id "$(terraform -chdir=terraform output -raw vault_recovery_secret_name)" \
+	--kms-key-arn "$(terraform -chdir=terraform output -raw vault_recovery_kms_key_arn)" \
+	--region us-east-1
+```
+
+Set `AWS_PROFILE` first if the runner uses a named profile. The helper assumes the bootstrap role using those source credentials. Tests mock STS and Secrets Manager and never contact AWS or Vault. This helper only handles preflight and storage; the separate one-time Ansible bootstrap playbook will run Vault init and pipe its captured JSON into `store` with `no_log`.
+
+Vault init and Secrets Manager storage are not atomic. If init succeeds but the controller loses the response before storing it, never initialize again and do not assume Vault can reveal the original root token or recovery shares. Stop and assess recovery options: if the cluster is operational and an authorized root/admin path exists, recovery keys can be rekeyed and a new root token can be generated using the required quorum; if no recovery quorum or administrative access remains, the initialized data may be unrecoverable without a valid backup. This is a documented residual risk, not something the helper can solve. Python reference clearing is best effort and not secure memory zeroization.
 
 Configure the same join behavior on all nodes, initialize only the designated first node, then start and join followers one at a time. Verify membership and health after each join. Do not initialize followers independently. Keep systemd boot enablement separate until restart and KMS auto-unseal have been validated.
 
