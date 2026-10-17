@@ -12,3 +12,6 @@ override.tf.json
 
 # Local editor settings
 .DS_Store
+
+# Local Terraform variable values
+/terraform/terraform.tfvars

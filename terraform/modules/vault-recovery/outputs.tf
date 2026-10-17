@@ -5,5 +5,10 @@ output "kms_key_arn" {
 
 output "secret_name" {
   description = "Name of the empty Vault recovery bundle secret"
-  value       = aws_secretsmanager_secret.recovery_bundle.name
+  value       = aws_secretsmanager_secret.bootstrap_recovery.name
+}
+
+output "bootstrap_role_arn" {
+  description = "ARN of the dedicated role allowed to write the initial Vault recovery bundle"
+  value       = aws_iam_role.bootstrap.arn
 }

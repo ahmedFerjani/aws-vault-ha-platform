@@ -67,9 +67,11 @@ module "vault_auto_unseal" {
 module "vault_recovery" {
   source = "./modules/vault-recovery"
 
-  name_prefix  = local.name_prefix
-  account_id   = local.account_id
-  default_tags = local.default_tags
+  name_prefix                     = local.name_prefix
+  account_id                      = local.account_id
+  default_tags                    = local.default_tags
+  region                          = local.region
+  bootstrap_trusted_principal_arn = var.bootstrap_trusted_principal_arn
 }
 
 module "vault_node_iam" {

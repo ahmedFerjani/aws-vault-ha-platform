@@ -27,3 +27,8 @@ variable "vault_ami_id" {
   type        = string
   default     = "ami-0d27e0fb3bac4d724"
 }
+
+variable "bootstrap_trusted_principal_arn" {
+  description = "IAM user or role ARN allowed to assume the one-time Vault bootstrap role"
+  type        = string
+}

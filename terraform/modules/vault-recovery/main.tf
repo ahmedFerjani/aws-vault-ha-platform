@@ -36,8 +36,8 @@ resource "aws_kms_alias" "this" {
   }
 }
 
-resource "aws_secretsmanager_secret" "recovery_bundle" {
-  name                    = "${var.name_prefix}/recovery-bundle"
+resource "aws_secretsmanager_secret" "bootstrap_recovery" {
+  name                    = "${var.name_prefix}/bootstrap-recovery"
   description             = "Vault recovery shares and temporary bootstrap root token"
   kms_key_id              = aws_kms_key.this.arn
   recovery_window_in_days = 30
@@ -47,6 +47,54 @@ resource "aws_secretsmanager_secret" "recovery_bundle" {
   }
 
   tags = merge(var.default_tags, {
-    Name = "${var.name_prefix}-recovery-bundle"
+    Name = "${var.name_prefix}-bootstrap-recovery"
+  })
+}
+
+resource "aws_iam_role" "bootstrap" {
+  name = "${var.name_prefix}-bootstrap-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        AWS = var.bootstrap_trusted_principal_arn
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+
+  tags = merge(var.default_tags, {
+    Name = "${var.name_prefix}-bootstrap-role"
+  })
+}
+
+resource "aws_iam_role_policy" "bootstrap_recovery" {
+  name = "${var.name_prefix}-bootstrap-recovery"
+  role = aws_iam_role.bootstrap.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "WriteAndVerifyRecoverySecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:PutSecretValue"]
+        Resource = aws_secretsmanager_secret.bootstrap_recovery.arn
+      },
+      {
+        Sid      = "UseRecoveryKeyThroughSecretsManager"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = aws_kms_key.this.arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService"                  = "secretsmanager.${var.region}.amazonaws.com"
+            "kms:EncryptionContext:SecretARN" = aws_secretsmanager_secret.bootstrap_recovery.arn
+          }
+        }
+      }
+    ]
   })
 }
