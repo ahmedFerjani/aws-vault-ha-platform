@@ -28,10 +28,8 @@ The target is a three-node Vault cluster on EC2 across three availability zones.
 - Recovery must respect Raft and quorum rules
 - Node replacement must be treated as a stateful operation
 - Backup and restore are handled independently from live cluster storage
-- The proposed Raft and NLB client-routing design is documented in [raft-ha.md](raft-ha.md); it remains unimplemented pending review and testing.
+- The Raft/NLB design and remaining HA validation are documented in [raft-ha.md](raft-ha.md).
 
 ## Current state
 
-Terraform implements the VPC, three public/private subnet pairs, same-AZ NAT routes, security groups, NLB and target group, KMS key, Vault IAM instance profile, launch template, and ASG. The ASG currently requests one node, not three. It registers instances with the target group, but no NLB listener is implemented. The management module has been removed.
-
-Laptop SSH-over-SSM and Ansible were tested on one private node; the operator reports successful installation and an idempotent repeat. The role's default is to stop and disable Vault, but the current node was manually started for a local hostname-verified TLS/health test and remains disabled at boot. It is still uninitialized/sealed and has no Raft membership. Public NLB/DNS, KMS auto-unseal, first-node initialization, follower joins, three-AZ HA, backup/restore, and failure tests remain pending. KMS/EC2 interface endpoints and S3 backups are not implemented. Confirm live AWS/node state before operating; documented test results are not a guarantee that infrastructure remains running.
+Terraform provisions the network, NLB listener/target group, DNS alias, separate auto-unseal and recovery KMS keys, recovery secret/bootstrap role, and Vault compute/IAM. The ASG desired capacity is one. The operator reports a working initialized single-node endpoint; this is not HA. See [raft-ha.md](raft-ha.md) for the latest validation details and remaining cluster work. Confirm live AWS/node state before operating.

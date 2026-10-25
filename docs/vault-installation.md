@@ -14,7 +14,7 @@ Session Manager does not record SSH command contents inside the tunnel. CloudTra
 
 ## Workflow at a glance
 
-For a newly created or recreated node, follow this order: (1) review and apply the Terraform plan; (2) update the ignored `ansible/inventory/private.ini` with the new instance ID; (3) run `scripts/access/prepare-ssm-ssh-laptop.sh` to authorize the laptop public key and pin the node host key through SSM; (4) run the connectivity check and, if Vault needs installation, the deployment helper; (5) prepare the controller and run the one-time bootstrap playbook. Do not run the deployment helper against an initialized or serving node: it stops and disables Vault.
+For a newly created or recreated node, use this order: (1) review and apply Terraform; (2) update the ignored inventory with the new instance ID; (3) run `ansible/access-vault-node.yml` to set up SSH-over-SSM through its local helper; (4) run `ansible/deploy-vault-node.yml` to check access and install/configure Vault; (5) prepare the controller and run `ansible/bootstrap-vault.yml` once. Do not run the deployment playbook against an initialized or serving node: the role stops and disables Vault.
 
 ## Prerequisites
 
@@ -41,49 +41,36 @@ git check-ignore ansible/inventory/private.ini
 
 ## Prepare SSH-over-SSM for a recreated instance
 
-The laptop helper now handles access setup in one command using SSM Run Command; no inbound SSH rule or manual script paste is required. It verifies the instance and SSM agent, reuses/creates the laptop key, asks for explicit confirmation, sends only the laptop's public key to `ec2-user`'s authorized-keys setup, obtains the node's ED25519 host public key through the authenticated SSM result, and pins it in `known_hosts`. It refuses to replace a different pinned host key.
-
-Run the laptop helper from the project root:
+Update `ansible/inventory/private.ini` with the new instance ID, then run this playbook from the repository root:
 
 ```bash
-bash scripts/access/prepare-ssm-ssh-laptop.sh i-REPLACE_WITH_INSTANCE_ID us-east-1
+ansible-playbook -i ansible/inventory/private.ini ansible/access-vault-node.yml --limit vault-node-1
 ```
 
-It requires typing `AUTHORIZE SSH FOR i-...` before sending the command. It refuses to overwrite an existing laptop private key or replace a conflicting host-key entry. The SSM command output contains only status text and the node's public host key, not private credentials. The IAM identity must also be permitted to call `ssm:GetCommandInvocation` and `ssm:ListCommandInvocations` to wait for and retrieve the result. If automated Run Command is unavailable, `scripts/access/authorize-ssm-ssh-node.sh` remains a manual fallback for a trusted interactive SSM shell.
+The playbook verifies that exactly `vault-node-1` is targeted, then delegates the local helper to the controller without a separate confirmation prompt. The helper verifies that EC2 is running and SSM is online, reuses or creates `~/.ssh/vault-laptop`, and uses SSM Run Command to add only the laptop public key to `ec2-user` and retrieve the instance's ED25519 host public key. It pins that key under the instance ID in `known_hosts`, refusing a fingerprint conflict. No inbound SSH rule or manual script paste is needed. The helper still requires explicit confirmation when run directly outside Ansible.
 
-## Check Ansible connectivity
+The AWS identity needs permissions to describe the instance and SSM registration, send `AWS-RunShellScript` to the target, retrieve the command invocation result, and start the `AWS-StartSSHSession` tunnel. The helper is invoked by Ansible; operators do not run it directly. `scripts/access/authorize-ssm-ssh-node.sh` remains an optional manual fallback for a trusted interactive SSM shell.
 
-Load the laptop key into the SSH agent for a limited time:
+## Load the laptop SSH key
+
+Load the key into the SSH agent for one hour. Enter its passphrase locally if prompted; Ansible uses the agent and does not need the passphrase.
 
 ```bash
 ssh-add -t 3600 ~/.ssh/vault-laptop
 ```
 
-Run the check-only preflight:
-
-```bash
-bash scripts/deployment/check-ansible-connectivity.sh
-```
-
-With no arguments, it uses `ansible/inventory/private.ini` and `vault-node-1`. Override these with `INVENTORY HOST_ALIAS` arguments. The helper forces host-key checking, tests SSH/remote Python with Ansible ping, then tests `become` with read-only `id -u`. Expect `pong` and UID `0`. It exits nonzero on failure and never runs the playbook. The command module may label `id -u` `CHANGED` by default; the command itself does not alter the node.
-
 ## Deploy Vault to one node
 
-Review the local inventory and verify that both TLS source files exist, are readable, valid for `vault.ahmedferjani.com`, and match. Check playbook syntax:
+Review the inventory and verify that the TLS certificate and private key exist, match, and are valid for `vault.ahmedferjani.com`. Then syntax-check and run the deployment playbook:
 
 ```bash
-ansible-playbook -i ansible/inventory/private.ini ansible/site.yml --syntax-check
+ansible-playbook -i ansible/inventory/private.ini ansible/deploy-vault-node.yml --limit vault-node-1 --syntax-check
+ansible-playbook -i ansible/inventory/private.ini ansible/deploy-vault-node.yml --limit vault-node-1
 ```
 
-Run the deployment helper:
+The playbook checks SSH/ping and effective root access, then asks you to type `DEPLOY VAULT NODE 1`. Review the inventory target and TLS source paths first. It is restricted to `vault-node-1` and installs/configures the role directly; it does not initialize Vault.
 
-```bash
-bash scripts/deployment/deploy-vault-node.sh
-```
-
-With no arguments, it uses `ansible/inventory/private.ini` and `vault-node-1`; override with `INVENTORY HOST_ALIAS`. It verifies that exactly one host is selected, runs syntax and connectivity checks, then requires typing `DEPLOY VAULT NODE 1` before deploying to that host only. The phrase is derived from the selected inventory alias. Review the inventory target and TLS source paths before confirming.
-
-**The Ansible role stops and disables `vault.service`.** Run it only on a disposable, non-serving node; applying it to a serving cluster can interrupt service and quorum. Missing TLS files can cause partial installation because package tasks precede TLS checks. Run the helper again to test idempotency; a converged node should report `changed=0`, `failed=0`, and `unreachable=0`. Installation does not start or initialize Vault.
+**The Ansible role stops and disables `vault.service`.** Run it only on a disposable, non-serving node; applying it to a serving cluster can interrupt service and quorum. Missing TLS files can cause partial installation because package tasks precede TLS checks. Run the playbook again only on a disposable, non-serving node to test idempotency; a converged node should report `changed=0`, `failed=0`, and `unreachable=0`. Installation does not start or initialize Vault.
 
 ## One-time Vault initialization and recovery storage
 
@@ -113,8 +100,6 @@ export VAULT_RECOVERY_KMS_KEY_ARN="$(terraform -chdir=terraform output -raw vaul
 Ensure `ansible/inventory/private.ini` points to the current `vault-node-1` instance and that verified SSH-over-SSM access is ready. For a new/recreated instance, follow [Prepare SSH-over-SSM for a recreated instance](#prepare-ssh-over-ssm-for-a-recreated-instance) first.
 
 ```bash
-ssh-add -t 3600 ~/.ssh/vault-laptop
-bash scripts/deployment/check-ansible-connectivity.sh
 ansible-playbook -i ansible/inventory/private.ini ansible/bootstrap-vault.yml --syntax-check
 ```
 
@@ -132,6 +117,6 @@ The single Secrets Manager bundle stores all five recovery shares, the 3-of-5 th
 
 Vault initialization and the Secrets Manager write are not atomic. The captured response exists in controller memory and is not durably staged. If initialization succeeds but storage fails or the controller loses the response, **never rerun initialization**. Stop and assess recovery options; do not assume Vault can return the original recovery shares or root token.
 
-## Current checkpoint and next Raft step
+## Current checkpoint
 
-The recovery resources and bdeployootstrap helper/playbook are implemented. Initialization, runtime KMS auto-unseal, Raft joining, three-node HA, NLB listener, and Route 53 access have not been verified in this runbook. Do not expose Vault publicly before initialization. After safe initialization and recovery-bundle verification, validate KMS auto-unseal with a controlled restart, then configure/test NLB and DNS and join followers one at a time. A follower must join the existing cluster; never initialize it separately. See the [Raft HA sequence](raft-ha.md) for the remaining checks.
+The operator reports a healthy single-node Vault endpoint, with initialization, recovery storage, restart auto-unseal, NLB, and DNS checks completed. This is not HA: followers, three-node quorum, failover, replacement, and restore testing remain. Current Ansible entry points are `ansible/access-vault-node.yml`, `ansible/deploy-vault-node.yml`, and the one-time `ansible/bootstrap-vault.yml`. See [Raft HA](raft-ha.md) for the cluster plan. Never run the deployment playbook on this initialized node; its role stops and disables Vault.

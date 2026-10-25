@@ -1,15 +1,15 @@
 # aws-vault-ha-platform
 
-Production-oriented HashiCorp Vault on AWS lab focused on high availability, stateful recovery, and operational realism.
+HashiCorp Vault on AWS infrastructure project, built in validated stages toward high availability and stateful recovery.
 
 ## Scope
 
-- Three Vault nodes across three availability zones
+- Target: three Vault nodes across three availability zones
 - Private-only networking for Vault instances
 - End-to-end client TLS through NLB TCP pass-through to Vault
 - Raft integrated storage for cluster coordination
 - AWS KMS for auto-unseal
-- S3 for encrypted snapshots
+- Planned S3 encrypted snapshots
 - Terraform for AWS infrastructure
 - Ansible for Vault installation and configuration
 
@@ -17,9 +17,10 @@ Production-oriented HashiCorp Vault on AWS lab focused on high availability, sta
 
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Decisions: [docs/decisions.md](docs/decisions.md)
+- Raft HA and recovery: [docs/raft-ha.md](docs/raft-ha.md)
 - Terraform: [terraform/README.md](terraform/README.md)
 - Installation and laptop SSH-over-SSM instructions: [docs/vault-installation.md](docs/vault-installation.md)
 
 ## Current state
 
-The current development iteration uses one private Vault node. The operator reports the laptop SSH-over-SSM setup and Ansible workflow succeeded, including an idempotent repeat. The installation role deliberately leaves Vault stopped and disabled. Confirm current AWS/service state before operating; three-node Raft HA, first-node initialization, KMS auto-unseal, an active NLB endpoint, replacement, and disaster recovery remain unvalidated. See [the installation and node-access procedure](docs/vault-installation.md) for the current flow and [compute operations](docs/compute.md) for stateful-node safety.
+The current development deployment is **one private Vault node**. The operator reports that Vault was initialized, the recovery bundle was stored, Vault remained unsealed after a controlled restart, and the single-node NLB/DNS endpoint was configured and health-tested. This is not three-node HA. Raft follower joins, quorum/failover tests, automated replacement, S3 snapshots, and restore-tested disaster recovery remain incomplete. Confirm live AWS and service state before operating. See [installation and node-access](docs/vault-installation.md) and [compute operations](docs/compute.md).

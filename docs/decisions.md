@@ -1,68 +1,20 @@
 # Architectural decisions
 
-## Decision: Use a 3-node Vault cluster with Raft integrated storage.
+## Decision: Three Vault nodes with Raft
 
-A three-node cluster provides a quorum of 2, so one EC2 node can fail without losing cluster availability. This keeps the design simple and avoids introducing extra coordination systems like Consul. The cluster still needs careful handling during recovery and replacement because Vault is a stateful service, not a stateless application.
-
-### Benefits
-
-- High availability with a simple three-node model
-- One-node failure is tolerated without losing quorum
-- Clear operational model for leader election and recovery
-
-### Trade-offs
-
-- Recovery and node replacement must follow strict Raft rules
-- Losing two nodes can still break quorum and impact availability
-- The system requires more operational discipline than a stateless app
+Three voters require quorum two, so the cluster can tolerate one node failure. Raft avoids adding Consul, but losing two voters removes quorum. Replacement and recovery must preserve Raft state; a replacement joins the existing cluster and must never initialize independently.
 
 ## Decision: Use laptop SSH over SSM for private-node administration.
 
-### Context
+Use laptop SSH tunneled through `AWS-StartSSHSession`: this keeps nodes private without inbound port 22 or an always-on management host. Ansible uses ordinary SSH with a dedicated laptop key and pinned host keys. IAM for SSM, SSH authentication, host verification, and Linux privilege escalation are separate controls. The controller needs SSM Run Command/session permissions; the node's `AmazonSSMManagedInstanceCore` role does not grant them. Session Manager does not record SSH command contents.
 
-The operator needs to configure private Vault nodes without a public SSH path or an always-on management instance.
+## Decision: AWS KMS auto-unseal
 
-### Decision
-
-Use ordinary SSH via `AWS-StartSSHSession`, with instance IDs, verified host keys, and a dedicated laptop key. Keep Vault nodes private and use their SSM instance role and outbound HTTPS connectivity. Ansible tasks do not need transport-specific changes; inventory/SSH configuration must target fresh instance IDs. Access setup, connectivity testing, and deployment are separate steps. Do not initialize Vault as part of access testing.
-
-### Alternatives Considered
-
-Direct private-IP SSH from a management EC2 host; a native Ansible SSM connection plugin; a future dedicated CI runner.
-
-### Why
-
-SSM removes inbound SSH rules and the always-on management-host cost while allowing IAM-controlled tunnel initiation. A controller outside the VPC does not need direct private-IP routing for this transport.
-
-### Consequences
-
-The laptop requires AWS CLI, Session Manager plugin, and narrowly scoped session permissions. `AmazonSSMManagedInstanceCore` on a target is not controller permission to start sessions. SSH authentication, host-key verification, and Linux privilege escalation remain separate controls. CloudTrail can record session API activity, but Session Manager cannot capture SSH command contents. Manual public-key provisioning supports infrastructure recreation; automated replacement access and future CI controller placement are separate work. The operator reports the scripts worked after recreation; retain strict host-key checking.
-
-## Decision: Use AWS KMS for auto-unseal.
-
-AWS KMS removes the need for manual unseal during EC2 restarts or replacement and keeps the cluster recoverable in a native AWS environment. It also requires tightly scoped IAM permissions and a clear separation between KMS, Raft, and S3 responsibilities.
-
-### Benefits
-
-- Reduces operational friction during recovery and restarts
-- Fits naturally with AWS-managed infrastructure
-- Improves resilience for EC2-based Vault nodes
-
-### Trade-offs
-
-- KMS permissions must be tightly restricted
-- KMS is not Vault storage and must not be confused with Raft
-- S3 remains a backup destination, not a live storage backend
+KMS handles Vault seal/unseal operations; Raft remains live storage and S3 is reserved for snapshots. This avoids manual unseal after restarts but makes preservation of the original KMS key and tight instance-role permissions essential.
 
 ## Decision: Store bootstrap recovery material in a separate Secrets Manager secret.
 
-### Context
-
-Vault initialization returns recovery-key shares and an initial root token once. They must be retained outside Terraform state, and the existing KMS key is dedicated to Vault auto-unseal rather than encrypting operator recovery material.
-
-### Decision
-
-Create one empty AWS Secrets Manager secret encrypted with a dedicated recovery KMS key. A later, separate bootstrap step will write a single JSON bundle to it. Terraform owns only the KMS key and secret metadata and never manages the secret value. The first infrastructure iteration deliberately does not add bootstrap IAM trust or execute initialization until the deployment principal is explicitly known.
+Vault initialization returns recovery shares and an initial root token once. A separate recovery KMS key encrypts one Secrets Manager bundle; Terraform manages only resource metadata, while the one-time Ansible bootstrap stores the value through a controller helper.
 
 ### Alternatives Considered
 
@@ -72,73 +24,30 @@ Create one empty AWS Secrets Manager secret encrypted with a dedicated recovery 
 
 ### Consequences
 
-- The recovery KMS key and secret incur recurring charges and are protected from ordinary Terraform destruction.
-- The later bootstrap identity must have narrowly scoped write/verification access; a separate break-glass identity handles retrieval. Vault EC2 nodes receive no recovery-secret permission.
-- The same-account secret is not an independent custody boundary. Loss of initialization output before persistence cannot be fixed by rerunning init; operations assume one authorized bootstrap operator and require a documented manual recovery response.
+The bootstrap role has scoped write/metadata access; a separate break-glass identity handles retrieval, and Vault nodes get no recovery-secret access. The same-account bundle is not an independent custody boundary and costs money. Lost init output cannot be recovered by rerunning initialization; only one authorized operator should bootstrap at a time.
 
-## Decision: Use an internet-facing NLB with private Vault nodes.
+## Decision: Public NLB, private Vault nodes, TLS pass-through
 
-Clients reach the Vault API through a TLS-enabled public NLB. The NLB is placed in public subnets across three Availability Zones; Vault EC2 instances remain in private subnets without public IPs or direct internet routes.
+The internet-facing NLB spans three public AZ subnets and forwards TCP 443 to Vault on TCP 8200. Vault nodes remain private; Vault terminates TLS for `vault.ahmedferjani.com`. This keeps the NLB outside the API decryption boundary and avoids a second TLS hop. The trade-off is that certificate distribution/renewal and TLS validation on every node remain operational responsibilities. The operator reports the single-node endpoint works; HA routing still needs validation (see [raft-ha.md](raft-ha.md)).
 
-### Benefits
+## NLB target health and cross-zone policy: HA validation pending
 
-- Provides a stable public entry point across Availability Zones
-- Keeps Vault nodes off the public internet
-- Separates inbound client access from private-node outbound egress
-
-### Trade-offs
-
-- The public endpoint requires strict TLS, listener, and target security-group controls
-- Public subnets and an Internet Gateway are required for the NLB
-- NAT Gateways are not part of inbound access and must be justified separately for private-node egress
-
-## Decision: Use NLB TCP pass-through for Vault client TLS.
-
-The NLB will forward TCP port 443 to the Vault API target port without terminating TLS. Vault presents the certificate for `vault.ahmedferjani.com`; clients establish and validate TLS directly with Vault. The NLB remains a Layer 4 forwarding component and does not decrypt Vault requests.
-
-### Alternatives Considered
-
-- Terminate client TLS at the NLB with an ACM certificate, then establish a separate TLS connection to Vault.
-
-### Why
-
-- Keeps the NLB outside the Vault API decryption trust boundary.
-- Provides a single client-to-Vault TLS session and preserves Vault's own TLS endpoint.
-- The domain is managed in Route 53, allowing DNS-01 certificate validation without exposing Vault nodes for ACME challenges.
-
-### Consequences
-
-- Vault nodes must securely receive and renew their TLS certificate and private key.
-- The client certificate must cover `vault.ahmedferjani.com`; peer TLS verification for AWS-discovered private IPs must be tested with the configured SNI/server name and CA.
-- Certificate renewal and deployment become an operational responsibility; private keys must never be committed.
-- Compared with NLB TLS termination, the NLB does not need an ACM listener certificate and does not see plaintext requests.
-
-## Proposal pending review: Vault target health and NLB cross-zone policy
-
-The architecture selects the stable NLB hostname as the shared `api_addr` because clients are intended to access Vault only through that load balancer. The [Raft HA design](raft-ha.md) recommends retaining Vault's `standbyok=true` health behavior so unsealed standbys can receive requests and forward them to the active node, with NLB cross-zone routing enabled. HashiCorp documents possible redirect loops when a shared load-balancer address is used in fallback redirect behavior. An active-only health check is an alternative, but can leave the NLB without healthy targets during elections and interacts with NLB fail-open behavior.
-
-The recommended health/cross-zone implementation is not yet approved or validated. Test normal forwarding, redirect fallback, leader transitions, health convergence, and client retries against the actual NLB/three-node cluster before enabling the public listener. If these tests fail, revisit client reachability and per-node API addressing before changing Vault configuration.
+Cross-zone behavior, standby forwarding/redirects, leader transitions, and health convergence are still untested on a three-node cluster. The health-check and fail-open trade-offs are described in [raft-ha.md](raft-ha.md); validate them before claiming HA.
 
 ## Decision: Use AWS discovery for Raft peer joining; keep one public DNS endpoint.
 
-Use `vault.ahmedferjani.com` as the public client endpoint, pointing to the NLB through a Route 53 alias. Do not assign permanent numbered private DNS names to ASG instances. Configure Vault Raft `retry_join` with AWS discovery, selecting eligible instances by a dedicated cluster tag and resolving their current private IPv4 addresses. Each node advertises its current private address as `cluster_addr`; `api_addr` advertises the public NLB hostname for client redirects.
-
-### Why
-
-- Clients use one stable endpoint while Vault nodes remain privately addressed.
-- Vault can advertise one stable public endpoint for clients while using current private addresses for Raft traffic.
-- AWS discovery avoids custom Route 53 record allocation and stale private records when ASG instances are replaced.
+Use one Route 53/NLB client endpoint; keep per-node `cluster_addr` private. Raft `retry_join` uses AWS discovery filtered by the cluster tag, avoiding static per-instance DNS records.
 
 ### Consequences
 
-- Vault's instance role needs narrowly scoped `ec2:DescribeInstances` access for discovery; inspect supported IAM scoping before implementation.
-- The ASG launch template must tag instances with a dedicated cluster-discovery tag, and discovery must filter to this cluster only.
+- Vault's instance role has `ec2:DescribeInstances` scoped by the `ec2:Region` condition; the discovery query filters results by the dedicated cluster tag. AWS requires `Resource="*"` for this action because it does not support resource-level scoping.
+- The ASG launch template tags instances for discovery; confirm the tag filter remains cluster-specific.
 - DNS identity does not preserve Raft identity; replacement nodes must join the existing cluster, not initialize a new one.
 - Validate TLS peer verification when auto-join discovers private IPs, including certificate SAN and `leader_tls_servername` behavior, before starting nodes.
 
-## Decision: Provide private Vault nodes with same-AZ NAT and AWS service endpoints.
+## Decision: Provide private Vault nodes with same-AZ NAT; defer interface endpoints.
 
-Vault nodes require outbound access to the HashiCorp RPM and OS repositories, KMS for auto-unseal, and EC2 APIs for Raft peer discovery. Keep nodes in private subnets without public IPs. Use one NAT Gateway per AZ for general HTTPS repository egress and KMS/EC2 interface VPC endpoints in each AZ for private AWS API access. Private subnet default routes target only the NAT Gateway in their own AZ; endpoint security groups accept HTTPS only from the Vault-node security group.
+Vault nodes require outbound access to the HashiCorp RPM and OS repositories, KMS for auto-unseal, and EC2 APIs for Raft peer discovery. Keep nodes in private subnets without public IPs. Use one NAT Gateway per AZ for HTTPS egress. KMS/EC2 interface endpoints are a possible later improvement, but are deferred for this cost-sensitive lab; current AWS API traffic uses NAT.
 
 ### Alternatives Considered
 
@@ -149,12 +58,11 @@ Vault nodes require outbound access to the HashiCorp RPM and OS repositories, KM
 ### Why
 
 - Supports package installation and updates while keeping Vault instances private.
-- Keeps KMS and EC2 API traffic on AWS private connectivity where endpoints are used.
+- Interface endpoints could keep KMS and EC2 API traffic on AWS private connectivity if added later.
 - Same-AZ NAT routing avoids depending on another AZ for general egress.
 
 ### Consequences
 
-- Three NAT Gateways and two interface endpoint services (KMS and EC2, each with endpoint network interfaces in all three AZs) add recurring cost; review estimates before apply.
+- Three NAT Gateways/EIPs incur recurring charges; adding interface endpoints would add more.
 - Security-group HTTPS egress through NAT is not destination-domain filtering. Use an internal mirror or egress control if public HTTPS needs tighter restriction.
-- Earlier package tests used a public instance in another VPC; the operator subsequently reported successful installation on one private node. This does not validate egress across every AZ or actual Vault KMS seal operations.
-- Three NAT Gateways, Elastic IPs, same-AZ private routes, and Vault outbound TCP 443 are implemented. KMS/EC2 interface endpoints are not implemented; AWS API HTTPS currently uses NAT. Endpoints are a planned private-connectivity improvement, not a prerequisite for the current NAT-backed SSM test. Review their plan and cost impact before adding them.
+- Same-AZ NAT routes and HTTPS egress are implemented; AWS API traffic uses NAT until interface endpoints are justified.

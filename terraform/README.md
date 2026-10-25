@@ -10,19 +10,17 @@ Infrastructure and single-node installation foundations are implemented. Terrafo
 
 - VPC and three public/private subnet pairs in `us-east-1`
 - Internet Gateway, route tables, and one NAT Gateway/EIP per AZ
-- NLB and TCP 8200 instance target group with Vault HTTPS health checks
+- Internet-facing NLB, TCP 8200 instance target group/HTTPS health checks, TCP 443 pass-through listener, and Route 53 alias
 - Restrictive NLB/Vault security groups, no inbound SSH, and outbound HTTPS
 - Auto-unseal KMS key with rotation, 30-day deletion window, and `prevent_destroy`
-- Separate recovery KMS key and empty Secrets Manager recovery-bundle secret, both protected from ordinary destruction
+- Separate recovery KMS key, Secrets Manager recovery-bundle secret, and scoped bootstrap IAM role
 - Vault EC2 role with key-scoped KMS permissions and SSM registration permissions
 - Private launch template with IMDSv2 and encrypted EBS
 - ASG with minimum 0, desired 1, maximum 3, and target-group registration
 
 ### Not yet implemented or validated
 
-No NLB listener, Route 53 alias, KMS/EC2 interface endpoints, or S3 backup infrastructure is implemented. AWS Raft discovery, safe replacement bootstrap, three-node HA, and runtime KMS auto-unseal remain pending. The ASG is not a completed stateful replacement solution. SSH public-key authorization is still manual; refresh inventory and verified host keys after each node replacement. See [installation instructions](../docs/vault-installation.md).
-
-The recovery bundle secret contains no value; Terraform manages only its metadata and the dedicated encryption key. Root outputs expose the non-secret secret name/ARN and recovery KMS key ARN. A dedicated bootstrap IAM role and one-time Ansible/Python bootstrap are not implemented yet. Do not apply the recovery-resource plan until IAM trust and usage permissions are designed and reviewed.
+Three-node Raft membership, leader/quorum failure handling, automated node replacement, KMS/EC2 interface endpoints, S3 backup infrastructure, and restore testing remain incomplete. The ASG is not a safe stateful replacement solution. Ansible playbooks are the operator entry points for SSM access preparation, one-node deployment, and one-time bootstrap; see [installation instructions](../docs/vault-installation.md). The recovery secret is populated only by the bootstrap workflow; Terraform manages metadata, never its secret value.
 
 ### Validation approach
 
