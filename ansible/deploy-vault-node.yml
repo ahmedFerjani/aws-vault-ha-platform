@@ -1,0 +1,49 @@
+---
+- name: Deploy Vault to one explicitly selected node
+  hosts: vault-node-1
+  gather_facts: false
+  become: true
+
+  vars_prompt:
+    - name: deployment_confirmation
+      prompt: "The Vault role stops and disables Vault. Type DEPLOY VAULT NODE 1 to continue"
+      private: false
+
+  pre_tasks:
+    - name: Require the single intended node
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'vault-node-1'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: >-
+          This deployment playbook is restricted to vault-node-1. Select only that
+          host with --limit; no deployment tasks have run.
+
+    - name: Check SSH connection and managed-node Python
+      ansible.builtin.ping:
+
+    - name: Check privilege escalation without changing the node
+      ansible.builtin.command:
+        argv:
+          - id
+          - -u
+      register: become_uid
+      changed_when: false
+
+    - name: Require effective root access
+      ansible.builtin.assert:
+        that:
+          - become_uid.stdout == '0'
+        fail_msg: >-
+          Ansible become did not provide root access. Vault deployment was not started.
+
+    - name: Require deliberate deployment confirmation
+      ansible.builtin.assert:
+        that:
+          - deployment_confirmation == 'DEPLOY VAULT NODE 1'
+        fail_msg: Deployment cancelled; the Vault role was not run.
+      delegate_to: localhost
+      become: false
+
+  roles:
+    - vault

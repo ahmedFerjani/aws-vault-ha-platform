@@ -6,7 +6,7 @@ instance_id=$1
 region=${2:-us-east-1}
 [[ $instance_id =~ ^i-[0-9a-f]+$ ]] || { echo "Invalid EC2 instance ID" >&2; exit 2; }
 
-for tool in aws ssh-keygen awk sort sed tr python3; do
+for tool in aws ssh-keygen awk sort sed python3; do
   command -v "$tool" >/dev/null || { echo "Missing required command: $tool" >&2; exit 1; }
 done
 
@@ -39,7 +39,11 @@ read -r key_type key_blob _ < "$key.pub"
 }
 
 echo "This will add the laptop public key to ec2-user through SSM Run Command and pin the instance host key."
-read -r -p "Type AUTHORIZE SSH FOR $instance_id to continue: " confirmation
+if [[ -n ${VAULT_ACCESS_CONFIRM:-} ]]; then
+  confirmation=$VAULT_ACCESS_CONFIRM
+else
+  read -r -p "Type AUTHORIZE SSH FOR $instance_id to continue: " confirmation
+fi
 [[ $confirmation == "AUTHORIZE SSH FOR $instance_id" ]] || {
   echo "Cancelled; no SSM command was sent."
   exit 1
@@ -106,4 +110,4 @@ if [[ -z $old_fingerprints ]]; then
 fi
 
 echo "Host key is trusted for $instance_id ($new_fingerprint)."
-echo "Next: ssh-add -t 3600 '$key', then run the Ansible ping and become checks."
+echo "Next: ssh-add -t 3600 '$key', then run ansible/deploy-vault-node.yml with the intended inventory limit."

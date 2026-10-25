@@ -1,0 +1,29 @@
+---
+- name: Prepare SSH-over-SSM access for the first Vault node
+  hosts: vault_nodes
+  gather_facts: false
+
+  pre_tasks:
+    - name: Require exactly the intended Vault node
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'vault-node-1'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: >-
+          Access setup requires --limit vault-node-1. No SSM command was sent.
+      delegate_to: localhost
+      become: false
+
+  tasks:
+    - name: Authorize laptop SSH key through SSM and pin the node host key
+      ansible.builtin.command:
+        argv:
+          - "{{ playbook_dir }}/../scripts/access/prepare-ssm-ssh-laptop.sh"
+          - "{{ hostvars[inventory_hostname].ansible_host }}"
+          - "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+      environment:
+        # The playbook's single-target assertion is the operator guard; standalone helper use prompts interactively.
+        VAULT_ACCESS_CONFIRM: "AUTHORIZE SSH FOR {{ hostvars[inventory_hostname].ansible_host }}"
+      delegate_to: localhost
+      become: false
+      changed_when: true

@@ -62,7 +62,6 @@
           - "{{ recovery_profile }}"
       delegate_to: localhost
       become: false
-      register: bootstrap_preflight
       changed_when: false
       no_log: true
 
@@ -145,6 +144,5 @@
         stdin_add_newline: false
       delegate_to: localhost
       become: false
-      register: bootstrap_store
       changed_when: true
       no_log: true
