@@ -25,12 +25,14 @@ bash "$script_dir/check-ansible-connectivity.sh" "$inventory" "$host"
 # This role stops/disables Vault, so require a deliberate disposable-node confirmation.
 echo "WARNING: the Vault role stops and disables the service on '$host'."
 echo "Run only on a disposable, non-serving node; this can interrupt service/quorum."
+host_confirmation=$(printf '%s' "$host" | sed 's/-/ /g' | tr '[:lower:]' '[:upper:]')
+expected_confirmation="DEPLOY $host_confirmation"
 if [[ -n ${VAULT_DEPLOY_CONFIRM:-} ]]; then
   confirmation=$VAULT_DEPLOY_CONFIRM
 else
-  read -r -p "Type DEPLOY-$host to continue: " confirmation
+  read -r -p "Type $expected_confirmation to continue: " confirmation
 fi
-[[ $confirmation == "DEPLOY-$host" ]] || { echo "Cancelled; playbook was not run."; exit 1; }
+[[ $confirmation == "$expected_confirmation" ]] || { echo "Cancelled; playbook was not run."; exit 1; }
 
 # Limit the play to the exact host alias checked above.
 exec ansible-playbook -i "$inventory" "$script_dir/../../ansible/site.yml" --limit "$host"

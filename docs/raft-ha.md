@@ -102,7 +102,9 @@ python3 scripts/vault-bootstrap/bootstrap_vault_init.py preflight \
 	--region us-east-1
 ```
 
-Set `AWS_PROFILE` first if the runner uses a named profile. The helper assumes the bootstrap role using those source credentials. Tests mock STS and Secrets Manager and never contact AWS or Vault. This helper only handles preflight and storage; the separate one-time Ansible bootstrap playbook will run Vault init and pipe its captured JSON into `store` with `no_log`.
+Set `AWS_PROFILE` first if the runner uses a named profile. The helper assumes the bootstrap role using those source credentials. Tests mock STS and Secrets Manager and never contact AWS or Vault.
+
+The separate manual Ansible entry point is `ansible/bootstrap-vault.yml`; it is not included in `site.yml`. It targets only `vault-node-1`, requires the Terraform output identifiers, runs helper preflight on the controller, starts Vault without enabling boot startup, checks init status, and asks for explicit confirmation before one-time initialization. Init output and the controller-side `store` task use `no_log` and transfer JSON through Ansible stdin rather than a file or command argument. Follow the complete, single-source [initialization runbook](vault-installation.md#one-time-vault-initialization-and-recovery-storage). Do not run while another operator is bootstrapping. If storage fails or the controller loses its in-memory result, do not rerun init; follow the recovery limitation below.
 
 Vault init and Secrets Manager storage are not atomic. If init succeeds but the controller loses the response before storing it, never initialize again and do not assume Vault can reveal the original root token or recovery shares. Stop and assess recovery options: if the cluster is operational and an authorized root/admin path exists, recovery keys can be rekeyed and a new root token can be generated using the required quorum; if no recovery quorum or administrative access remains, the initialized data may be unrecoverable without a valid backup. This is a documented residual risk, not something the helper can solve. Python reference clearing is best effort and not secure memory zeroization.
 

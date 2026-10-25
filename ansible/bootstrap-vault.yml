@@ -1,0 +1,150 @@
+---
+- name: One-time Vault recovery bootstrap
+  hosts: vault-node-1
+  gather_facts: false
+  become: true
+
+  vars:
+    bootstrap_helper: "{{ playbook_dir }}/../scripts/vault-bootstrap/bootstrap_vault_init.py"
+    bootstrap_python: "{{ lookup('env', 'VAULT_BOOTSTRAP_PYTHON') | default('python3', true) }}"
+    bootstrap_role_arn: "{{ lookup('env', 'VAULT_BOOTSTRAP_ROLE_ARN') }}"
+    recovery_secret_name: "{{ lookup('env', 'VAULT_RECOVERY_SECRET_NAME') }}"
+    recovery_kms_key_arn: "{{ lookup('env', 'VAULT_RECOVERY_KMS_KEY_ARN') }}"
+    recovery_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    recovery_profile: "{{ lookup('env', 'AWS_PROFILE') }}"
+    vault_tls_server_name: vault.ahmedferjani.com
+    vault_ca_cert: /etc/pki/tls/certs/ca-bundle.crt
+
+  vars_prompt:
+    - name: bootstrap_confirmation
+      prompt: "One-time Vault initialization: type INITIALIZE VAULT NODE 1 to continue"
+      private: false
+
+  pre_tasks:
+    - name: Require the single intended target and Terraform recovery outputs
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'vault-node-1'
+          - ansible_play_hosts_all | length == 1
+          - bootstrap_role_arn | length > 0
+          - recovery_secret_name | length > 0
+          - recovery_kms_key_arn | length > 0
+          - recovery_region | length > 0
+        fail_msg: >-
+          Bootstrap requires only vault-node-1 and the role ARN, secret name,
+          recovery KMS key ARN, and region from the current Terraform outputs.
+      delegate_to: localhost
+      become: false
+
+    - name: Require deliberate one-time confirmation
+      ansible.builtin.assert:
+        that:
+          - bootstrap_confirmation == 'INITIALIZE VAULT NODE 1'
+        fail_msg: Bootstrap cancelled; Vault was not initialized.
+      delegate_to: localhost
+      become: false
+
+    - name: Verify bootstrap role and confirm recovery secret is empty and uses expected KMS key
+      ansible.builtin.command:
+        argv:
+          - "{{ bootstrap_python }}"
+          - "{{ bootstrap_helper }}"
+          - preflight
+          - --role-arn
+          - "{{ bootstrap_role_arn }}"
+          - --secret-id
+          - "{{ recovery_secret_name }}"
+          - --kms-key-arn
+          - "{{ recovery_kms_key_arn }}"
+          - --region
+          - "{{ recovery_region }}"
+          - --profile
+          - "{{ recovery_profile }}"
+      delegate_to: localhost
+      become: false
+      register: bootstrap_preflight
+      changed_when: false
+      no_log: true
+
+  tasks:
+    - name: Start Vault without enabling boot startup
+      ansible.builtin.systemd:
+        name: vault
+        state: started
+        enabled: false
+
+    - name: Check initialization status
+      ansible.builtin.command:
+        argv:
+          - vault
+          - operator
+          - init
+          - -status
+          - -format=json
+      environment:
+        VAULT_ADDR: https://127.0.0.1:8200
+        VAULT_CACERT: "{{ vault_ca_cert }}"
+        VAULT_TLS_SERVER_NAME: "{{ vault_tls_server_name }}"
+      register: vault_init_status
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Stop if Vault initialization status could not be determined
+      ansible.builtin.assert:
+        that:
+          - vault_init_status.rc in [0, 2]
+        fail_msg: >-
+          Vault status check returned exit code {{ vault_init_status.rc }}; expected 0
+          (already initialized) or 2 (not initialized). Check that Vault is running,
+          reachable locally, and its TLS settings are valid. Initialization was not attempted.
+
+    - name: Refuse an already initialized Vault cluster
+      ansible.builtin.assert:
+        that:
+          - vault_init_status.rc == 2
+        fail_msg: >-
+          Vault is already initialized. This playbook will not run
+          `vault operator init` again. Check the recovery secret and follow the
+          existing-cluster recovery procedure if needed.
+
+    - name: Initialize Vault once and capture JSON response
+      ansible.builtin.command:
+        argv:
+          - vault
+          - operator
+          - init
+          - -format=json
+          - -recovery-shares=5
+          - -recovery-threshold=3
+      environment:
+        VAULT_ADDR: https://127.0.0.1:8200
+        VAULT_CACERT: "{{ vault_ca_cert }}"
+        VAULT_TLS_SERVER_NAME: "{{ vault_tls_server_name }}"
+      register: vault_init_result
+      changed_when: true
+      no_log: true
+
+    - name: Store and verify captured recovery bundle
+      ansible.builtin.command:
+        argv:
+          - "{{ bootstrap_python }}"
+          - "{{ bootstrap_helper }}"
+          - store
+          - --role-arn
+          - "{{ bootstrap_role_arn }}"
+          - --secret-id
+          - "{{ recovery_secret_name }}"
+          - --kms-key-arn
+          - "{{ recovery_kms_key_arn }}"
+          - --region
+          - "{{ recovery_region }}"
+          - --profile
+          - "{{ recovery_profile }}"
+        stdin: "{{ vault_init_result.stdout }}"
+        stdin_add_newline: false
+      delegate_to: localhost
+      become: false
+      register: bootstrap_store
+      changed_when: true
+      no_log: true
