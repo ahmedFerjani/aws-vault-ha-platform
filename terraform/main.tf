@@ -94,3 +94,15 @@ module "vault_node_compute" {
   target_group_arn        = module.public_network.target_group_arn
   default_tags            = local.default_tags
 }
+
+resource "aws_route53_record" "vault" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = "vault.ahmedferjani.com"
+  type    = "A"
+
+  alias {
+    name                   = module.public_network.load_balancer_dns_name
+    zone_id                = module.public_network.load_balancer_zone_id
+    evaluate_target_health = true
+  }
+}

@@ -94,3 +94,14 @@ resource "aws_lb_target_group" "this" {
     Name = "${var.name_prefix}-tg"
   }
 }
+
+resource "aws_lb_listener" "vault_https" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+}
