@@ -14,12 +14,12 @@ Session Manager does not record SSH command contents inside the tunnel. CloudTra
 
 ## Workflow at a glance
 
-For a newly created or recreated node, follow this order: (1) review and apply the Terraform plan; (2) update the ignored `ansible/inventory/private.ini` with the new instance ID; (3) use the two `scripts/access/` helpers to authorize laptop SSH and pin the node host key through SSM; (4) run the connectivity check and, if Vault needs installation, the deployment helper; (5) prepare the controller and run the one-time bootstrap playbook. Do not run the deployment helper against an initialized or serving node: it stops and disables Vault.
+For a newly created or recreated node, follow this order: (1) review and apply the Terraform plan; (2) update the ignored `ansible/inventory/private.ini` with the new instance ID; (3) run `scripts/access/prepare-ssm-ssh-laptop.sh` to authorize the laptop public key and pin the node host key through SSM; (4) run the connectivity check and, if Vault needs installation, the deployment helper; (5) prepare the controller and run the one-time bootstrap playbook. Do not run the deployment helper against an initialized or serving node: it stops and disables Vault.
 
 ## Prerequisites
 
 - Laptop: Bash, AWS CLI, Session Manager plugin, OpenSSH tools, Ansible, and access to the TLS certificate chain and matching private key.
-- AWS: operator credentials with narrowly scoped `ssm:StartSession` access to the target and `AWS-StartSSHSession` document.
+- AWS: operator credentials with access to describe the target, use `ssm:SendCommand` with `AWS-RunShellScript` on that instance, retrieve the command result, and start the `AWS-StartSSHSession` tunnel used by Ansible.
 - Node: EC2 running, SSM Agent online, `sshd` active, `AmazonSSMManagedInstanceCore` attached, and outbound HTTPS to required AWS/package endpoints.
 - Local inventory: fresh EC2 instance ID, region, remote Python path, laptop SSH-key path, and laptop-local TLS source paths.
 
@@ -41,41 +41,15 @@ git check-ignore ansible/inventory/private.ini
 
 ## Prepare SSH-over-SSM for a recreated instance
 
-Use both helpers in `scripts/access/`; no inbound SSH rule is required. The laptop helper checks instance/SSM readiness and handles the laptop key and host-key pinning. The node helper, run in the trusted SSM shell, installs only the laptop's public key.
+The laptop helper now handles access setup in one command using SSM Run Command; no inbound SSH rule or manual script paste is required. It verifies the instance and SSM agent, reuses/creates the laptop key, asks for explicit confirmation, sends only the laptop's public key to `ec2-user`'s authorized-keys setup, obtains the node's ED25519 host public key through the authenticated SSM result, and pins it in `known_hosts`. It refuses to replace a different pinned host key.
 
-Run the laptop helper in terminal 1:
+Run the laptop helper from the project root:
 
 ```bash
 bash scripts/access/prepare-ssm-ssh-laptop.sh i-REPLACE_WITH_INSTANCE_ID us-east-1
 ```
 
-It verifies EC2 is running and SSM Online, reuses `~/.ssh/vault-laptop` or creates an Ed25519 key if neither half exists, prints the laptop public key, and waits for the node host public key. It refuses to overwrite an existing private key. Leave this terminal open.
-
-In terminal 2, open an interactive SSM shell to the same instance:
-
-```bash
-aws ssm start-session --region us-east-1 --target i-REPLACE_WITH_INSTANCE_ID
-```
-
-In that SSM shell, stage the node helper by running:
-
-```bash
-sudo tee /tmp/authorize-ssm-ssh-node.sh >/dev/null
-```
-
-Paste the complete contents of `scripts/access/authorize-ssm-ssh-node.sh` from the laptop editor and press Ctrl-D. Run it:
-
-```bash
-sudo bash /tmp/authorize-ssm-ssh-node.sh
-```
-
-Paste the laptop public key printed by the waiting laptop helper. The node helper validates and appends that key once to `ec2-user`'s `authorized_keys` with OpenSSH `restrict`, preserves other keys, and prints the node's ED25519 host public key. Copy the complete host-key line from this trusted SSM session. Remove the temporary helper:
-
-```bash
-sudo rm -f /tmp/authorize-ssm-ssh-node.sh
-```
-
-Return to terminal 1 and paste the node host public key. The laptop helper fingerprints it and pins it under the instance ID. If a different fingerprint is already recorded, it stops; investigate rather than replacing trust.
+It requires typing `AUTHORIZE SSH FOR i-...` before sending the command. It refuses to overwrite an existing laptop private key or replace a conflicting host-key entry. The SSM command output contains only status text and the node's public host key, not private credentials. The IAM identity must also be permitted to call `ssm:GetCommandInvocation` and `ssm:ListCommandInvocations` to wait for and retrieve the result. If automated Run Command is unavailable, `scripts/access/authorize-ssm-ssh-node.sh` remains a manual fallback for a trusted interactive SSM shell.
 
 ## Check Ansible connectivity
 

@@ -6,7 +6,7 @@ instance_id=$1
 region=${2:-us-east-1}
 [[ $instance_id =~ ^i-[0-9a-f]+$ ]] || { echo "Invalid EC2 instance ID" >&2; exit 2; }
 
-for tool in aws ssh-keygen awk sort; do
+for tool in aws ssh-keygen awk sort sed tr python3; do
   command -v "$tool" >/dev/null || { echo "Missing required command: $tool" >&2; exit 1; }
 done
 
@@ -32,14 +32,65 @@ if [[ ! -r $key.pub ]]; then
 fi
 ssh-keygen -lf "$key.pub" >/dev/null
 
-echo
-echo "Laptop public key (copy this line into the node helper in your SSM session):"
-cat "$key.pub"
-echo
-echo "After the node helper prints its ED25519 host public key, paste the full line below."
+read -r key_type key_blob _ < "$key.pub"
+[[ $key_type == ssh-ed25519 && $key_blob =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || {
+  echo "Expected one valid ED25519 public key in $key.pub" >&2
+  exit 1
+}
 
-# Pin the host key copied from the trusted SSM shell; reject unexpected changes.
-read -r -p "Node host public key: " host_key
+echo "This will add the laptop public key to ec2-user through SSM Run Command and pin the instance host key."
+read -r -p "Type AUTHORIZE SSH FOR $instance_id to continue: " confirmation
+[[ $confirmation == "AUTHORIZE SSH FOR $instance_id" ]] || {
+  echo "Cancelled; no SSM command was sent."
+  exit 1
+}
+
+# Only the validated public-key blob is interpolated into the remote script.
+remote_script=$(cat <<EOF
+set -eu
+id ec2-user >/dev/null
+systemctl is-active --quiet sshd
+ssh_dir=/home/ec2-user/.ssh
+authorized_keys="\$ssh_dir/authorized_keys"
+install -d -o ec2-user -g ec2-user -m 700 "\$ssh_dir"
+touch "\$authorized_keys"
+chown ec2-user:ec2-user "\$authorized_keys"
+chmod 600 "\$authorized_keys"
+key_blob='$key_blob'
+if grep -Fqx "restrict ssh-ed25519 \$key_blob" "\$authorized_keys"; then
+  echo "Laptop key already authorized."
+elif awk -v blob="\$key_blob" '{ for (i=1; i<=NF; i++) if (\$i==blob) found=1 } END { exit !found }' "\$authorized_keys"; then
+  echo "This key already exists with different options; inspect authorized_keys." >&2
+  exit 1
+else
+  printf 'restrict ssh-ed25519 %s\\n' "\$key_blob" >> "\$authorized_keys"
+  chown ec2-user:ec2-user "\$authorized_keys"
+  echo "Laptop key authorized."
+fi
+printf 'VAULT_HOST_KEY: '
+cat /etc/ssh/ssh_host_ed25519_key.pub
+EOF
+)
+
+request=$(python3 -c 'import json,sys; print(json.dumps({"DocumentName":"AWS-RunShellScript","InstanceIds":[sys.argv[1]],"Parameters":{"commands":[sys.argv[2]]}}))' "$instance_id" "$remote_script")
+command_id=$(aws ssm send-command --region "$region" --cli-input-json "$request" --query 'Command.CommandId' --output text)
+[[ $command_id =~ ^[0-9a-fA-F-]+$ ]] || { echo "SSM did not return a valid command ID" >&2; exit 1; }
+
+echo "Waiting for SSM key authorization command to complete..."
+wait_status=0
+aws ssm wait command-executed --region "$region" --command-id "$command_id" --instance-id "$instance_id" || wait_status=$?
+invocation=$(aws ssm get-command-invocation --region "$region" --command-id "$command_id" --instance-id "$instance_id" --output json)
+command_status=$(printf '%s' "$invocation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Status", "Unknown"))')
+command_stdout=$(printf '%s' "$invocation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("StandardOutputContent", ""), end="")')
+command_stderr=$(printf '%s' "$invocation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("StandardErrorContent", ""), end="")')
+if [[ $command_status != Success || $wait_status -ne 0 ]]; then
+  echo "SSM authorization command failed with status: $command_status" >&2
+  [[ -z $command_stderr ]] || printf '%s\n' "$command_stderr" >&2
+  exit 1
+fi
+
+# Pin the host key returned by this authenticated SSM command; reject changes.
+host_key=$(printf '%s\n' "$command_stdout" | sed -n 's/^VAULT_HOST_KEY: //p')
 [[ ${host_key%% *} == ssh-ed25519 ]] || { echo "Expected an ED25519 host public key" >&2; exit 1; }
 new_fingerprint=$(printf '%s\n' "$host_key" | ssh-keygen -lf /dev/stdin | awk '{print $2}')
 known_hosts="$HOME/.ssh/known_hosts"
